@@ -309,6 +309,7 @@ class Neo4jClient:
                 edge_query,
                 topic_id=topic_id,
                 parent_id=parent_id,
+                node_ids=list(node_ids),
                 database_=self.database,
                 routing_=RoutingControl.READ,
                 result_transformer_=lambda r: [dict(record) for record in r]
