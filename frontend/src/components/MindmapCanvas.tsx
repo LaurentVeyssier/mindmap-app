@@ -1,13 +1,6 @@
-import React, { useEffect, useState } from "react";
-import ReactFlow, {
-  Background,
-  Controls,
-  MiniMap,
-  useNodesState,
-  useEdgesState,
-} from "reactflow";
-import type { Node, Edge } from "reactflow";
-import "reactflow/dist/style.css";
+import React, { useEffect, useRef, useState } from "react";
+// @ts-ignore
+import { ForceGraph2D } from "react-force-graph";
 
 interface MindmapNode {
   id: string;
@@ -40,7 +33,7 @@ interface MindmapCanvasProps {
 }
 
 /**
- * Canvas workspace rendering the mindmap graph with zoom, pan, and interactive radial layout.
+ * Canvas workspace rendering the mindmap graph with a fluid D3 force-directed physics engine.
  */
 export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
   nodes,
@@ -48,114 +41,101 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
   centerLabel,
   onNodeClick,
 }) => {
-  const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
-  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
+  const fgRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
+  // Measure container and handle resizing dynamically
   useEffect(() => {
-    if (nodes.length === 0) {
-      setRfNodes([]);
-      setRfEdges([]);
-      return;
+    if (containerRef.current) {
+      setDimensions({
+        width: containerRef.current.clientWidth,
+        height: containerRef.current.clientHeight,
+      });
     }
 
-    const calculatedNodes: Node[] = [];
-    const calculatedEdges: Edge[] = [];
+    const handleResize = () => {
+      if (containerRef.current) {
+        setDimensions({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight,
+        });
+      }
+    };
 
-    // Center coordinates
-    const centerX = 450;
-    const centerY = 350;
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
-    // 1. Render the central/parent hub node
+  // Format data for react-force-graph
+  const getGraphData = () => {
+    if (nodes.length === 0) return { nodes: [], links: [] };
+
     const centerNodeId = "center-hub-node";
-    calculatedNodes.push({
-      id: centerNodeId,
-      type: "input",
-      data: { label: centerLabel },
-      position: { x: centerX - 100, y: centerY - 25 },
-      selectable: false,
-      style: {
-        background: "linear-gradient(135deg, #d97706, #b45309)",
-        color: "#ffffff",
-        border: "2px solid #f59e0b",
-        borderRadius: "20px",
-        padding: "12px 24px",
-        fontWeight: "bold",
-        fontSize: "15px",
-        width: "200px",
-        textAlign: "center",
-        boxShadow: "0 0 25px rgba(217, 119, 6, 0.4)",
-        cursor: "default",
+    const forceNodes = [
+      {
+        id: centerNodeId,
+        label: centerLabel,
+        isCenter: true,
+        level: nodes[0]?.level || 0,
       },
-    });
+      ...nodes.map((n) => ({
+        id: n.id,
+        label: n.label,
+        description: n.description,
+        content: n.content,
+        level: n.level,
+        isCenter: false,
+      })),
+    ];
 
-    // 2. Render concept nodes radially
-    const totalConcepts = nodes.length;
-    const radius = 260; // radius of circle layout
+    const forceLinks: any[] = [];
 
-    nodes.forEach((node, index) => {
-      const angle = (2 * Math.PI * index) / totalConcepts;
-      const x = centerX + radius * Math.cos(angle) - 80;
-      const y = centerY + radius * Math.sin(angle) - 35;
-
-      const isSelected = selectedNodeId === node.id;
-
-      calculatedNodes.push({
-        id: node.id,
-        data: { label: node.label },
-        position: { x, y },
-        style: {
-          background: isSelected ? "#1e293b" : "rgba(15, 23, 42, 0.75)",
-          color: "#f8fafc",
-          border: isSelected 
-            ? "2px solid #f59e0b" 
-            : "1px solid rgba(148, 163, 184, 0.3)",
-          borderRadius: "10px",
-          padding: "10px 14px",
-          width: "160px",
-          fontSize: "13px",
-          textAlign: "center",
-          fontWeight: "500",
-          boxShadow: isSelected 
-            ? "0 0 15px rgba(245, 158, 11, 0.3)" 
-            : "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-          backdropFilter: "blur(12px)",
-          cursor: "pointer",
-        },
-      });
-
-      // 3. Connect center hub to children
-      calculatedEdges.push({
-        id: `hub-to-${node.id}`,
+    // Connect the center hub to all concepts (composition link)
+    nodes.forEach((node) => {
+      forceLinks.push({
         source: centerNodeId,
         target: node.id,
-        animated: true,
-        style: { stroke: "rgba(217, 119, 6, 0.35)", strokeWidth: 1.5 },
+        relation: "", // Empty relation for structural link
+        isHubLink: true,
       });
     });
 
-    // 4. Render homogenized relationships between nodes
+    // Add the homogenized relationships between concepts
     edges.forEach((edge) => {
-      calculatedEdges.push({
-        id: edge.id,
+      forceLinks.push({
         source: edge.source,
         target: edge.target,
-        label: edge.relation,
-        type: "smoothstep",
-        animated: false,
-        style: { stroke: "rgba(148, 163, 184, 0.5)", strokeWidth: 1.5 },
-        labelStyle: { fill: "#ffffff", fontSize: 9, fontWeight: "600" },
-        labelBgPadding: [6, 3],
-        labelBgBorderRadius: 4,
-        labelBgStyle: { fill: "#090d16", fillOpacity: 0.9, stroke: "rgba(148, 163, 184, 0.2)", strokeWidth: 1 },
+        relation: edge.relation,
+        isHubLink: false,
       });
     });
 
-    setRfNodes(calculatedNodes);
-    setRfEdges(calculatedEdges);
-  }, [nodes, edges, centerLabel, selectedNodeId, setRfNodes, setRfEdges]);
+    return { nodes: forceNodes, links: forceLinks };
+  };
 
-  const handleNodeClick = (_event: React.MouseEvent, node: Node) => {
+  const graphData = getGraphData();
+
+  // Configure forces and fit viewport when graph changes
+  useEffect(() => {
+    if (fgRef.current && nodes.length > 0) {
+      const fg = fgRef.current;
+
+      // Adjust D3 force simulation parameters for optimal layout spacing
+      fg.d3Force("charge").strength(-260);
+      fg.d3Force("link").distance((link: any) => {
+        return link.isHubLink ? 85 : 125;
+      });
+
+      // Warm up simulation and automatically center the graph
+      setTimeout(() => {
+        fg.zoomToFit(500, 70);
+      }, 250);
+    }
+  }, [nodes, edges]);
+
+  const handleNodeClick = (node: any) => {
     if (node.id === "center-hub-node") return;
 
     setSelectedNodeId(node.id);
@@ -172,27 +152,127 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
   };
 
   return (
-    <div className="canvas-wrapper">
-      <ReactFlow
-        nodes={rfNodes}
-        edges={rfEdges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeClick={handleNodeClick}
-        fitView
-        fitViewOptions={{ padding: 0.15 }}
-        minZoom={0.2}
-        maxZoom={1.8}
-      >
-        <Background color="#334155" gap={16} size={1} />
-        <Controls showInteractive={false} className="canvas-controls" />
-        <MiniMap
-          nodeStrokeColor="#f59e0b"
-          nodeColor="rgba(15, 23, 42, 0.8)"
-          maskColor="rgba(9, 13, 22, 0.7)"
-          className="canvas-minimap"
+    <div ref={containerRef} className="canvas-wrapper" style={{ height: "100%", width: "100%" }}>
+      {nodes.length > 0 ? (
+        <ForceGraph2D
+          ref={fgRef}
+          width={dimensions.width}
+          height={dimensions.height}
+          graphData={graphData}
+          onNodeClick={handleNodeClick}
+          backgroundColor="#050811"
+          cooldownTicks={120} // Let simulation settle quickly
+          
+          // --- Custom Node Drawing (Canvas) ---
+          nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+            const isCenter = node.id === "center-hub-node";
+            const isSelected = selectedNodeId === node.id;
+            const radius = isCenter ? 14 : 9;
+
+            // Draw glowing drop-shadow on selected node
+            if (isSelected) {
+              ctx.shadowColor = "#f59e0b";
+              ctx.shadowBlur = 12 * globalScale;
+            }
+
+            // Paint radial-gradient sphere
+            const gradient = ctx.createRadialGradient(node.x, node.y, 1, node.x, node.y, radius);
+            if (isCenter) {
+              gradient.addColorStop(0, "#fbbf24");
+              gradient.addColorStop(1, "#b45309");
+            } else if (isSelected) {
+              gradient.addColorStop(0, "#f59e0b");
+              gradient.addColorStop(1, "#1e293b");
+            } else {
+              gradient.addColorStop(0, "#475569");
+              gradient.addColorStop(1, "#0f172a");
+            }
+
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // Reset shadow
+            ctx.shadowBlur = 0;
+
+            // Draw border ring
+            ctx.strokeStyle = isSelected ? "#f59e0b" : isCenter ? "#d97706" : "rgba(148, 163, 184, 0.4)";
+            ctx.lineWidth = isSelected ? 2 / globalScale : 1 / globalScale;
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI);
+            ctx.stroke();
+
+            // Draw Label text below sphere
+            const label = node.label || "";
+            const fontSize = (isCenter ? 11.5 : 9.5) / Math.max(0.65, globalScale * 0.75);
+            ctx.font = `500 ${fontSize}px Outfit, sans-serif`;
+            ctx.fillStyle = isSelected ? "#f59e0b" : isCenter ? "#fbbf24" : "#cbd5e1";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "top";
+            
+            ctx.fillText(label, node.x, node.y + radius + 5);
+          }}
+
+          // --- Custom Link Drawing (Canvas) ---
+          linkCanvasObject={(link: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+            // Draw link line
+            ctx.strokeStyle = link.isHubLink
+              ? "rgba(217, 119, 6, 0.28)"
+              : "rgba(148, 163, 184, 0.28)";
+            ctx.lineWidth = (link.isHubLink ? 1.8 : 1.2) / globalScale;
+            ctx.beginPath();
+            ctx.moveTo(link.source.x, link.source.y);
+            ctx.lineTo(link.target.x, link.target.y);
+            ctx.stroke();
+
+            // Paint text relationship type at the midpoint
+            const label = link.relation;
+            if (label && globalScale > 0.8) {
+              const midX = (link.source.x + link.target.x) / 2;
+              const midY = (link.source.y + link.target.y) / 2;
+              
+              const fontSize = 7 / globalScale;
+              ctx.font = `bold ${fontSize}px Outfit, sans-serif`;
+              const textWidth = ctx.measureText(label).width;
+              const padding = 2.5 / globalScale;
+              
+              // Draw capsule background
+              ctx.fillStyle = "rgba(5, 8, 17, 0.92)";
+              ctx.fillRect(
+                midX - textWidth / 2 - padding,
+                midY - fontSize / 2 - padding,
+                textWidth + padding * 2,
+                fontSize + padding * 2
+              );
+              
+              // Capsule border
+              ctx.strokeStyle = "rgba(148, 163, 184, 0.15)";
+              ctx.lineWidth = 0.5 / globalScale;
+              ctx.strokeRect(
+                midX - textWidth / 2 - padding,
+                midY - fontSize / 2 - padding,
+                textWidth + padding * 2,
+                fontSize + padding * 2
+              );
+              
+              // Label text
+              ctx.fillStyle = "rgba(148, 163, 184, 0.8)";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText(label, midX, midY);
+            }
+          }}
+
+          // --- Animated Particles (Wind/Spring Flow) ---
+          linkDirectionalParticles={(link: any) => (link.isHubLink ? 2 : 0)}
+          linkDirectionalParticleWidth={2}
+          linkDirectionalParticleSpeed={0.006}
+          linkDirectionalParticleColor={() => "#f59e0b"}
         />
-      </ReactFlow>
+      ) : (
+        <div style={{ display: "none" }} />
+      )}
     </div>
   );
 };
