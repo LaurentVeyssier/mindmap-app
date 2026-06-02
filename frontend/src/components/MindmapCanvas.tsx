@@ -92,23 +92,14 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
 
     const forceLinks: any[] = [];
 
-    // Connect the center hub to all concepts (composition link)
-    nodes.forEach((node) => {
-      forceLinks.push({
-        source: centerNodeId,
-        target: node.id,
-        relation: "", // Empty relation for structural link
-        isHubLink: true,
-      });
-    });
-
-    // Add the homogenized relationships between concepts
+    // Add relationships from edges, dynamically mapping links from the parent node (not in nodes array) to center-hub-node
     edges.forEach((edge) => {
+      const sourceExists = nodes.some((n) => n.id === edge.source);
       forceLinks.push({
-        source: edge.source,
+        source: sourceExists ? edge.source : centerNodeId,
         target: edge.target,
         relation: edge.relation,
-        isHubLink: false,
+        isHubLink: !sourceExists,
       });
     });
 
@@ -246,14 +237,14 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
 
             // Paint text relationship type at the midpoint
             const label = link.relation;
-            if (label && globalScale > 0.8) {
+            if (label && globalScale > 0.45) {
               const midX = (link.source.x + link.target.x) / 2;
               const midY = (link.source.y + link.target.y) / 2;
               
-              const fontSize = 7 / globalScale;
+              const fontSize = 10.5 / globalScale;
               ctx.font = `bold ${fontSize}px Outfit, sans-serif`;
               const textWidth = ctx.measureText(label).width;
-              const padding = 2.5 / globalScale;
+              const padding = 3.5 / globalScale;
               
               // Draw capsule background
               ctx.fillStyle = "rgba(5, 8, 17, 0.92)";
@@ -275,7 +266,7 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
               );
               
               // Label text
-              ctx.fillStyle = "rgba(148, 163, 184, 0.8)";
+              ctx.fillStyle = "rgba(148, 163, 184, 0.85)";
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
               ctx.fillText(label, midX, midY);

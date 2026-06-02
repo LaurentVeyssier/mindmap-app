@@ -84,16 +84,16 @@ def import_api_key_check() -> bool:
 @app.post("/api/mindmap/create", response_model=GraphResponse)
 def create_mindmap(payload: TopicCreate) -> GraphResponse:
     """
-    Creates a new Topic and generates a macro-level mindmap.
+    Creates a new Topic and generates a 2-level hierarchical mindmap.
     
-    Planner Agent divides the topic into 8 disjoint nodes.
-    Homogenizer Agent links them with standardized relationships.
+    Planner Agent divides the topic into 5-8 disjoint concept nodes,
+    and each concept node into exactly 3 leaf nodes.
     Nodes and edges are persisted to Neo4j.
     """
     try:
         topic_id = str(uuid.uuid4())
         
-        # 1. Decompose Topic into Concept Nodes
+        # 1. Decompose Topic into Concept and Leaf Nodes
         decomposition = agents.plan_topic(
             topic=payload.topic,
             guidelines=payload.guidelines,
@@ -107,52 +107,66 @@ def create_mindmap(payload: TopicCreate) -> GraphResponse:
             description=decomposition.description
         )
         
-        # 3. Create Node Schemas with Unique IDs
+        # 3. Create Node and Edge Schemas
         nodes_list: List[MindmapNodeSchema] = []
-        label_to_id: Dict[str, str] = {}
+        edges_list: List[MindmapEdgeSchema] = []
         
-        for index, node in enumerate(decomposition.nodes):
-            node_id = str(uuid.uuid4())
-            label_to_id[node.label] = node_id
+        for concept in decomposition.concepts:
+            concept_id = str(uuid.uuid4())
             
+            # Level 1 Concept Node
             nodes_list.append(
                 MindmapNodeSchema(
-                    id=node_id,
-                    label=node.label,
-                    description=node.description,
+                    id=concept_id,
+                    label=concept.label,
+                    description=concept.description,
                     content=None,
-                    level=0,
+                    level=1,
                     parent_id=None,
+                    sub_graph_parent_id=None,
                     topic_id=topic_id
                 )
             )
             
-        # 4. Extract relationships using Homogenizer Agent
-        nodes_dict = [{"label": n.label, "description": n.description} for n in decomposition.nodes]
-        relationship_data = agents.homogenize_relationships(
-            topic=payload.topic,
-            nodes=nodes_dict
-        )
-        
-        # 5. Build Edge Schemas using mapped node IDs
-        edges_list: List[MindmapEdgeSchema] = []
-        for edge in relationship_data.edges:
-            source_id = label_to_id.get(edge.source_label)
-            target_id = label_to_id.get(edge.target_label)
+            # Edge from Topic (Level 0) to Concept (Level 1)
+            edge_id = f"edge-{topic_id}-{concept_id}"
+            edges_list.append(
+                MindmapEdgeSchema(
+                    id=edge_id,
+                    source=topic_id,
+                    target=concept_id,
+                    relation=concept.relation_from_topic
+                )
+            )
             
-            # Verify that source and target labels were actually generated nodes
-            if source_id and target_id:
-                edge_id = f"edge-{source_id}-{target_id}"
-                edges_list.append(
-                    MindmapEdgeSchema(
-                        id=edge_id,
-                        source=source_id,
-                        target=target_id,
-                        relation=edge.relation
+            # Level 2 Leaf Nodes
+            for leaf in concept.leaves:
+                leaf_id = str(uuid.uuid4())
+                nodes_list.append(
+                    MindmapNodeSchema(
+                        id=leaf_id,
+                        label=leaf.label,
+                        description=leaf.description,
+                        content=None,
+                        level=2,
+                        parent_id=concept_id,
+                        sub_graph_parent_id=None,
+                        topic_id=topic_id
                     )
                 )
                 
-        # 6. Save the graph to Neo4j database
+                # Edge from Concept (Level 1) to Leaf (Level 2)
+                leaf_edge_id = f"edge-{concept_id}-{leaf_id}"
+                edges_list.append(
+                    MindmapEdgeSchema(
+                        id=leaf_edge_id,
+                        source=concept_id,
+                        target=leaf_id,
+                        relation=leaf.relation
+                    )
+                )
+                
+        # 4. Save the full 2-level graph to Neo4j database
         neo4j_client.save_graph(
             topic_id=topic_id,
             nodes=nodes_list,
@@ -197,9 +211,9 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> GraphResponse:
     """
     Generates a sub-graph for a specific parent node.
     
-    Decomposes the node concept in detail, standardizes internal relationships,
-    creates the child nodes at parent_level + 1 linked via parent_id, and
-    saves them to Neo4j.
+    Decomposes the node concept in detail, standardizes relationships,
+    creates the child concepts at parent_level + 1 and leaf nodes at parent_level + 2,
+    and saves them to Neo4j.
     """
     parent_node = neo4j_client.get_node(node_id)
     if not parent_node:
@@ -208,9 +222,22 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> GraphResponse:
     topic_node = neo4j_client.get_topic(parent_node.topic_id)
     if not topic_node:
         raise HTTPException(status_code=404, detail="Topic not found")
-
+ 
     try:
-        # 1. Decompose the sub-topic (fewer nodes for visual clarity, e.g. 5 to 6)
+        # Check if sub-graph already exists in database to prevent regeneration and keep level unchanged
+        existing_nodes, existing_edges = neo4j_client.get_nodes_and_edges(
+            topic_id=parent_node.topic_id,
+            parent_id=parent_node.id
+        )
+        if existing_nodes:
+            logger.info(f"Drill down: Returning existing sub-graph for node '{parent_node.label}' from database.")
+            return GraphResponse(
+                topic=topic_node,
+                nodes=existing_nodes,
+                edges=existing_edges
+            )
+
+        # 1. Decompose the sub-topic
         sub_topic_context = f"{parent_node.label} (within the scope of {topic_node.title})"
         decomposition = agents.plan_topic(
             topic=sub_topic_context,
@@ -218,51 +245,66 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> GraphResponse:
             num_nodes=6
         )
         
-        # 2. Create sub-nodes (linked to parent)
+        # 2. Create sub-nodes (linked to parent) and edges
         sub_nodes_list: List[MindmapNodeSchema] = []
-        label_to_id: Dict[str, str] = {}
+        sub_edges_list: List[MindmapEdgeSchema] = []
         
-        for node in decomposition.nodes:
-            sub_node_id = str(uuid.uuid4())
-            label_to_id[node.label] = sub_node_id
+        for concept in decomposition.concepts:
+            concept_id = str(uuid.uuid4())
             
+            # Level L + 1 Concept Node
             sub_nodes_list.append(
                 MindmapNodeSchema(
-                    id=sub_node_id,
-                    label=node.label,
-                    description=node.description,
+                    id=concept_id,
+                    label=concept.label,
+                    description=concept.description,
                     content=None,
                     level=parent_node.level + 1,
                     parent_id=parent_node.id,
+                    sub_graph_parent_id=parent_node.id,
                     topic_id=parent_node.topic_id
                 )
             )
-
-        # 3. Extract internal relationships between sub-nodes
-        nodes_dict = [{"label": n.label, "description": n.description} for n in decomposition.nodes]
-        relationship_data = agents.homogenize_relationships(
-            topic=sub_topic_context,
-            nodes=nodes_dict
-        )
-        
-        # 4. Build sub-edges
-        sub_edges_list: List[MindmapEdgeSchema] = []
-        for edge in relationship_data.edges:
-            source_id = label_to_id.get(edge.source_label)
-            target_id = label_to_id.get(edge.target_label)
             
-            if source_id and target_id:
-                edge_id = f"edge-{source_id}-{target_id}"
-                sub_edges_list.append(
-                    MindmapEdgeSchema(
-                        id=edge_id,
-                        source=source_id,
-                        target=target_id,
-                        relation=edge.relation
+            # Edge from Parent to Sub-Concept
+            edge_id = f"edge-{parent_node.id}-{concept_id}"
+            sub_edges_list.append(
+                MindmapEdgeSchema(
+                    id=edge_id,
+                    source=parent_node.id,
+                    target=concept_id,
+                    relation=concept.relation_from_topic
+                )
+            )
+            
+            # Level L + 2 Leaf Nodes
+            for leaf in concept.leaves:
+                leaf_id = str(uuid.uuid4())
+                sub_nodes_list.append(
+                    MindmapNodeSchema(
+                        id=leaf_id,
+                        label=leaf.label,
+                        description=leaf.description,
+                        content=None,
+                        level=parent_node.level + 2,
+                        parent_id=concept_id,
+                        sub_graph_parent_id=parent_node.id,
+                        topic_id=parent_node.topic_id
                     )
                 )
-
-        # 5. Persist sub-graph to database
+                
+                # Edge from Sub-Concept to Leaf
+                leaf_edge_id = f"edge-{concept_id}-{leaf_id}"
+                sub_edges_list.append(
+                    MindmapEdgeSchema(
+                        id=leaf_edge_id,
+                        source=concept_id,
+                        target=leaf_id,
+                        relation=leaf.relation
+                    )
+                )
+ 
+        # 3. Persist sub-graph to database
         neo4j_client.save_graph(
             topic_id=parent_node.topic_id,
             nodes=sub_nodes_list,

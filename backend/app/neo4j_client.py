@@ -153,11 +153,13 @@ class Neo4jClient:
                       n.content = $content,
                       n.level = $level,
                       n.parent_id = $parent_id,
+                      n.sub_graph_parent_id = $sub_graph_parent_id,
                       n.topic_id = $topic_id
         ON MATCH SET n.label = $label,
                      n.description = $description,
                      n.level = $level,
-                     n.parent_id = $parent_id
+                     n.parent_id = $parent_id,
+                     n.sub_graph_parent_id = $sub_graph_parent_id
         MERGE (t)-[:HAS_NODE]->(n)
         """
         
@@ -179,6 +181,7 @@ class Neo4jClient:
                     content=node.content,
                     level=node.level,
                     parent_id=node.parent_id,
+                    sub_graph_parent_id=node.sub_graph_parent_id,
                     database_=self.database
                 )
                 
@@ -205,7 +208,7 @@ class Neo4jClient:
                 # We merge nodes to ensure they exist, then merge the relationship with relationship type rel_type.
                 # Storing 'relation' property as well for frontend query.
                 edge_query = f"""
-                MATCH (s:MindmapNode {{id: $source}})
+                MATCH (s) WHERE s.id = $source
                 MATCH (t:MindmapNode {{id: $target}})
                 MERGE (s)-[r:{rel_type}]->(t)
                 SET r.relation = $relation, r.id = $id
@@ -231,52 +234,56 @@ class Neo4jClient:
     ) -> Tuple[List[MindmapNodeSchema], List[MindmapEdgeSchema]]:
         """
         Retrieves nodes and edges for a specific level of hierarchy in a Topic.
+        For a given parent_id (or None for root), retrieves nodes belonging to that level's view.
         
         Args:
             topic_id: Root topic ID.
-            parent_id: The ID of the parent node to drill down into. If None, retrieves root level (level 0).
+            parent_id: The ID of the parent node to drill down into. If None, retrieves root level.
             
         Returns:
             Tuple[List[MindmapNodeSchema], List[MindmapEdgeSchema]]: Extracted nodes and edges.
         """
-        # Fetching nodes
+        # Retrieve all nodes that belong to the active level view
         if parent_id is None:
             node_query = """
             MATCH (n:MindmapNode {topic_id: $topic_id})
-            WHERE n.parent_id IS NULL
+            WHERE n.sub_graph_parent_id IS NULL
             RETURN n
             """
         else:
             node_query = """
             MATCH (n:MindmapNode {topic_id: $topic_id})
-            WHERE n.parent_id = $parent_id
+            WHERE n.sub_graph_parent_id = $parent_id
             RETURN n
             """
 
         try:
-            node_records = self.driver.execute_query(
+            records = self.driver.execute_query(
                 node_query,
                 topic_id=topic_id,
                 parent_id=parent_id,
                 database_=self.database,
-                routing_=RoutingControl.READ,
-                result_transformer_=lambda r: [record["n"] for record in r]
+                routing_=RoutingControl.READ
             )
 
             nodes = []
             node_ids = set()
-            for record in node_records:
-                node = MindmapNodeSchema(
-                    id=record["id"],
-                    label=record["label"],
-                    description=record["description"],
-                    content=record.get("content"),
-                    level=record["level"],
-                    parent_id=record.get("parent_id"),
-                    topic_id=record["topic_id"]
-                )
-                nodes.append(node)
-                node_ids.add(node.id)
+            for record in records.records:
+                n_node = record.get("n")
+                if n_node:
+                    n_id = n_node["id"]
+                    if n_id not in node_ids:
+                        nodes.append(MindmapNodeSchema(
+                            id=n_id,
+                            label=n_node["label"],
+                            description=n_node["description"],
+                            content=n_node.get("content"),
+                            level=n_node["level"],
+                            parent_id=n_node.get("parent_id"),
+                            sub_graph_parent_id=n_node.get("sub_graph_parent_id"),
+                            topic_id=n_node["topic_id"]
+                        ))
+                        node_ids.add(n_id)
 
             # Fetching edges connecting the retrieved nodes
             if not node_ids:
@@ -286,11 +293,22 @@ class Neo4jClient:
             MATCH (s:MindmapNode {topic_id: $topic_id})-[r]->(t:MindmapNode {topic_id: $topic_id})
             WHERE s.id IN $node_ids AND t.id IN $node_ids AND type(r) <> 'SUB_GRAPH_OF'
             RETURN s.id AS source, t.id AS target, coalesce(r.relation, type(r)) AS relation, coalesce(r.id, 'edge-' + s.id + '-' + t.id) AS id
+            
+            UNION
+            
+            MATCH (s)-[r]->(t:MindmapNode {topic_id: $topic_id})
+            WHERE t.id IN $node_ids
+              AND ((s:Topic AND s.id = $topic_id AND $parent_id IS NULL)
+                   OR (s:MindmapNode AND s.id = $parent_id AND $parent_id IS NOT NULL))
+              AND type(r) <> 'HAS_NODE'
+              AND type(r) <> 'SUB_GRAPH_OF'
+            RETURN s.id AS source, t.id AS target, coalesce(r.relation, type(r)) AS relation, coalesce(r.id, 'edge-' + s.id + '-' + t.id) AS id
             """
+            
             edge_records = self.driver.execute_query(
                 edge_query,
                 topic_id=topic_id,
-                node_ids=list(node_ids),
+                parent_id=parent_id,
                 database_=self.database,
                 routing_=RoutingControl.READ,
                 result_transformer_=lambda r: [dict(record) for record in r]
@@ -365,6 +383,7 @@ class Neo4jClient:
                 content=record.get("content"),
                 level=record["level"],
                 parent_id=record.get("parent_id"),
+                sub_graph_parent_id=record.get("sub_graph_parent_id"),
                 topic_id=record["topic_id"]
             )
         except Exception as err:
