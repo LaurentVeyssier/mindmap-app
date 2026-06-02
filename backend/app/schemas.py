@@ -24,6 +24,7 @@ class MindmapNodeSchema(BaseModel):
     level: int = Field(..., description="Depth level of the node in the drill-down hierarchy (0 for root level).")
     parent_id: Optional[str] = Field(None, description="ID of the parent node if this node belongs to a sub-graph.")
     sub_graph_parent_id: Optional[str] = Field(None, description="ID of the node drilled down from to generate this node's view (None for root level).")
+    has_subgraph: bool = Field(False, description="Whether this node has an active sub-graph available.")
     topic_id: str = Field(..., description="ID of the root Topic this node belongs to.")
 
 

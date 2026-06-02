@@ -19,6 +19,7 @@ interface MindmapNode {
   content: string | null;
   level: number;
   parent_id: string | null;
+  has_subgraph?: boolean;
   topic_id: string;
 }
 

@@ -9,6 +9,7 @@ interface MindmapNode {
   content: string | null;
   level: number;
   parent_id: string | null;
+  has_subgraph?: boolean;
   topic_id: string;
 }
 
@@ -206,6 +207,35 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
             ctx.textBaseline = "top";
             
             ctx.fillText(label, node.x, node.y + radius + 5);
+
+            // Draw Symbols below label text
+            const symbols: { text: string; color: string }[] = [];
+            if (node.content) {
+              symbols.push({ text: "✦ Enriched", color: "#fbbf24" }); // Gold Sparkle
+            }
+            if (node.has_subgraph) {
+              symbols.push({ text: "⧉ Sub-graph", color: "#38bdf8" }); // Cyan branching box
+            }
+
+            if (symbols.length > 0) {
+              const symbolFontSize = (fontSize * 0.75);
+              ctx.font = `bold ${symbolFontSize}px Outfit, sans-serif`;
+              ctx.textBaseline = "top";
+              ctx.textAlign = "center";
+              
+              const spacing = 8 / Math.max(0.65, globalScale * 0.75);
+              const widths = symbols.map(s => ctx.measureText(s.text).width);
+              const totalWidth = widths.reduce((a, b) => a + b, 0) + (symbols.length - 1) * spacing;
+              
+              let currentX = node.x - totalWidth / 2;
+              const symbolsY = node.y + radius + 5 + fontSize + 3;
+              
+              symbols.forEach((sym, idx) => {
+                ctx.fillStyle = sym.color;
+                ctx.fillText(sym.text, currentX + widths[idx] / 2, symbolsY);
+                currentX += widths[idx] + spacing;
+              });
+            }
           }}
 
           // --- Custom Link Drawing (Canvas) ---

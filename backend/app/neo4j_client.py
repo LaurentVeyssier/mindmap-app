@@ -243,18 +243,22 @@ class Neo4jClient:
         Returns:
             Tuple[List[MindmapNodeSchema], List[MindmapEdgeSchema]]: Extracted nodes and edges.
         """
-        # Retrieve all nodes that belong to the active level view
+        # Retrieve all nodes that belong to the active level view, along with has_subgraph indicator
         if parent_id is None:
             node_query = """
             MATCH (n:MindmapNode {topic_id: $topic_id})
             WHERE n.sub_graph_parent_id IS NULL
-            RETURN n
+            OPTIONAL MATCH (child:MindmapNode {topic_id: $topic_id})
+            WHERE child.sub_graph_parent_id = n.id
+            RETURN n, count(child) > 0 AS has_subgraph
             """
         else:
             node_query = """
             MATCH (n:MindmapNode {topic_id: $topic_id})
             WHERE n.sub_graph_parent_id = $parent_id
-            RETURN n
+            OPTIONAL MATCH (child:MindmapNode {topic_id: $topic_id})
+            WHERE child.sub_graph_parent_id = n.id
+            RETURN n, count(child) > 0 AS has_subgraph
             """
 
         try:
@@ -281,6 +285,7 @@ class Neo4jClient:
                             level=n_node["level"],
                             parent_id=n_node.get("parent_id"),
                             sub_graph_parent_id=n_node.get("sub_graph_parent_id"),
+                            has_subgraph=bool(record.get("has_subgraph", False)),
                             topic_id=n_node["topic_id"]
                         ))
                         node_ids.add(n_id)
@@ -365,7 +370,12 @@ class Neo4jClient:
         Returns:
             Optional[MindmapNodeSchema]: The node schema, or None if not found.
         """
-        query = "MATCH (n:MindmapNode {id: $id}) RETURN n"
+        query = """
+        MATCH (n:MindmapNode {id: $id})
+        OPTIONAL MATCH (child:MindmapNode)
+        WHERE child.sub_graph_parent_id = n.id
+        RETURN n, count(child) > 0 AS has_subgraph
+        """
         try:
             result = self.driver.execute_query(
                 query,
@@ -385,6 +395,7 @@ class Neo4jClient:
                 level=record["level"],
                 parent_id=record.get("parent_id"),
                 sub_graph_parent_id=record.get("sub_graph_parent_id"),
+                has_subgraph=bool(result.get("has_subgraph", False)),
                 topic_id=record["topic_id"]
             )
         except Exception as err:
