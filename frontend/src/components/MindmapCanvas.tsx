@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 // @ts-ignore
-import { ForceGraph2D } from "react-force-graph";
+import ForceGraph2D from "react-force-graph-2d";
 
 interface MindmapNode {
   id: string;
