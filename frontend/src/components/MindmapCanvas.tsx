@@ -165,6 +165,9 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
           
           // --- Custom Node Drawing (Canvas) ---
           nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+            if (typeof node.x !== "number" || typeof node.y !== "number" || isNaN(node.x) || isNaN(node.y)) {
+              return;
+            }
             const isCenter = node.id === "center-hub-node";
             const isSelected = selectedNodeId === node.id;
             const radius = isCenter ? 14 : 9;
@@ -216,6 +219,21 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
 
           // --- Custom Link Drawing (Canvas) ---
           linkCanvasObject={(link: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+            if (
+              !link ||
+              !link.source ||
+              !link.target ||
+              typeof link.source.x !== "number" ||
+              typeof link.source.y !== "number" ||
+              typeof link.target.x !== "number" ||
+              typeof link.target.y !== "number" ||
+              isNaN(link.source.x) ||
+              isNaN(link.source.y) ||
+              isNaN(link.target.x) ||
+              isNaN(link.target.y)
+            ) {
+              return;
+            }
             // Draw link line
             ctx.strokeStyle = link.isHubLink
               ? "rgba(217, 119, 6, 0.28)"
