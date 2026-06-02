@@ -87,6 +87,7 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
         description: n.description,
         content: n.content,
         level: n.level,
+        has_subgraph: n.has_subgraph,
         isCenter: false,
       })),
     ];
