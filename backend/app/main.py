@@ -337,39 +337,68 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> GraphResponse:
 @app.post("/api/mindmap/node/{node_id}/generate-content")
 def generate_node_content(node_id: str, payload: NodeCreateContent) -> Dict[str, str]:
     """
-    Generates a detailed markdown article/content for a specific concept node.
+    Generates a detailed markdown article/content for a specific concept node or root Topic node.
     
     Invokes Content Writer Agent and saves markdown to database.
     """
     node = neo4j_client.get_node(node_id)
+    if node:
+        topic = neo4j_client.get_topic(node.topic_id)
+        if not topic:
+            raise HTTPException(status_code=404, detail="Topic not found")
+            
+        parent_label: Optional[str] = None
+        if node.parent_id:
+            parent_node = neo4j_client.get_node(node.parent_id)
+            if parent_node:
+                parent_label = parent_node.label
+                
+        try:
+            content = agents.generate_node_content(
+                node_label=node.label,
+                node_description=node.description,
+                topic_title=topic.title,
+                parent_label=parent_label,
+                user_guidelines=payload.instructions
+            )
+            
+            neo4j_client.update_node_content(node_id, content)
+            return {"content": content}
+        except Exception as err:
+            logger.error(f"[red]Failed to generate content for node {node_id}[/red]: {err}")
+            raise HTTPException(status_code=500, detail=str(err))
+    else:
+        # Fallback to root Topic
+        topic = neo4j_client.get_topic(node_id)
+        if not topic:
+            raise HTTPException(status_code=404, detail="Node or Topic not found")
+            
+        try:
+            content = agents.generate_node_content(
+                node_label=topic.title,
+                node_description=topic.description,
+                topic_title=topic.title,
+                parent_label=None,
+                user_guidelines=payload.instructions
+            )
+            
+            neo4j_client.update_topic_content(node_id, content)
+            return {"content": content}
+        except Exception as err:
+            logger.error(f"[red]Failed to generate content for topic {node_id}[/red]: {err}")
+            raise HTTPException(status_code=500, detail=str(err))
+
+
+@app.get("/api/mindmap/node/{node_id}", response_model=MindmapNodeSchema)
+def get_node_details(node_id: str) -> MindmapNodeSchema:
+    """
+    Retrieves the properties (label, description, content, level, parent_id) for a single node.
+    """
+    node = neo4j_client.get_node(node_id)
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
-        
-    topic = neo4j_client.get_topic(node.topic_id)
-    if not topic:
-        raise HTTPException(status_code=404, detail="Topic not found")
-        
-    parent_label: Optional[str] = None
-    if node.parent_id:
-        parent_node = neo4j_client.get_node(node.parent_id)
-        if parent_node:
-            parent_label = parent_node.label
-            
-    try:
-        content = agents.generate_node_content(
-            node_label=node.label,
-            node_description=node.description,
-            topic_title=topic.title,
-            parent_label=parent_label,
-            user_guidelines=payload.instructions
-        )
-        
-        neo4j_client.update_node_content(node_id, content)
-        return {"content": content}
-        
-    except Exception as err:
-        logger.error(f"[red]Failed to generate content for node {node_id}[/red]: {err}")
-        raise HTTPException(status_code=500, detail=str(err))
+    return node
+
 
 
 @app.get("/api/mindmap/node/{node_id}/breadcrumbs")

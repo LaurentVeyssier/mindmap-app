@@ -43,7 +43,9 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
     <div className="detail-sidebar drawer">
       <div className="drawer-header">
         <div>
-          <span className="node-badge">Level {node.level} Concept</span>
+          <span className="node-badge">
+            {node.level === 0 ? "Root Topic" : `Level ${node.level} Concept`}
+          </span>
           <h3>{node.label}</h3>
         </div>
         <button onClick={onClose} className="btn-close" aria-label="Close panel">
@@ -128,30 +130,32 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
           </section>
         )}
 
-        <section className="drawer-section border-top actions-section">
-          <h4>Explore Sub-topics</h4>
-          <p className="section-help-text">
-            Decompose this node further into its own dedicated sub-graph mindmap level.
-          </p>
-          <button
-            onClick={() => onDrillDown(node.id)}
-            disabled={isDrillingDown}
-            className="btn btn-primary w-full"
-          >
-            {isDrillingDown ? (
-              <span className="spinner-container">
-                <span className="spinner"></span>
-                Planning Sub-graph...
-              </span>
-            ) : (
-              <>
-                <Network size={16} />
-                Drill Down into Concept
-                <ArrowRight size={16} className="ml-auto" />
-              </>
-            )}
-          </button>
-        </section>
+        {node.level > 0 && (
+          <section className="drawer-section border-top actions-section">
+            <h4>Explore Sub-topics</h4>
+            <p className="section-help-text">
+              Decompose this node further into its own dedicated sub-graph mindmap level.
+            </p>
+            <button
+              onClick={() => onDrillDown(node.id)}
+              disabled={isDrillingDown}
+              className="btn btn-primary w-full"
+            >
+              {isDrillingDown ? (
+                <span className="spinner-container">
+                  <span className="spinner"></span>
+                  Planning Sub-graph...
+                </span>
+              ) : (
+                <>
+                  <Network size={16} />
+                  Drill Down into Concept
+                  <ArrowRight size={16} className="ml-auto" />
+                </>
+              )}
+            </button>
+          </section>
+        )}
       </div>
     </div>
   );

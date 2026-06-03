@@ -82,7 +82,7 @@ class Neo4jClient:
         MERGE (t:Topic {id: $id})
         ON CREATE SET t.title = $title, t.description = $description, t.created_at = datetime()
         ON MATCH SET t.title = $title, t.description = $description
-        RETURN t.id AS id, t.title AS title, t.description AS description
+        RETURN t.id AS id, t.title AS title, t.description AS description, t.content AS content
         """
         try:
             result = self.driver.execute_query(
@@ -96,7 +96,8 @@ class Neo4jClient:
             return TopicResponse(
                 id=result["id"],
                 title=result["title"],
-                description=result["description"]
+                description=result["description"],
+                content=result.get("content")
             )
         except Exception as err:
             logger.error(f"[red]Error saving topic {title}[/red]: {err}")
@@ -112,7 +113,7 @@ class Neo4jClient:
         Returns:
             Optional[TopicResponse]: The topic details, or None if not found.
         """
-        query = "MATCH (t:Topic {id: $id}) RETURN t.id AS id, t.title AS title, t.description AS description"
+        query = "MATCH (t:Topic {id: $id}) RETURN t.id AS id, t.title AS title, t.description AS description, t.content AS content"
         try:
             result = self.driver.execute_query(
                 query,
@@ -125,11 +126,13 @@ class Neo4jClient:
             return TopicResponse(
                 id=result["id"],
                 title=result["title"],
-                description=result["description"]
+                description=result["description"],
+                content=result.get("content")
             )
         except Exception as err:
             logger.error(f"[red]Error getting topic {topic_id}[/red]: {err}")
             return None
+
 
     def save_graph(
         self,
@@ -465,7 +468,7 @@ class Neo4jClient:
         """
         query = """
         MATCH (t:Topic)
-        RETURN t.id AS id, t.title AS title, t.description AS description
+        RETURN t.id AS id, t.title AS title, t.description AS description, t.content AS content
         ORDER BY t.created_at DESC
         """
         try:
@@ -479,13 +482,40 @@ class Neo4jClient:
                 TopicResponse(
                     id=record["id"],
                     title=record["title"],
-                    description=record["description"]
+                    description=record["description"],
+                    content=record.get("content")
                 )
                 for record in records
             ]
         except Exception as err:
             logger.error(f"[red]Error fetching all topics[/red]: {err}")
             return []
+
+    def update_topic_content(self, topic_id: str, content: str) -> None:
+        """
+        Updates the detailed markdown content of a root Topic node.
+        
+        Args:
+            topic_id: Topic ID.
+            content: The detailed markdown article generated.
+        """
+        query = """
+        MATCH (t:Topic {id: $id})
+        SET t.content = $content
+        RETURN t.id AS id
+        """
+        try:
+            self.driver.execute_query(
+                query,
+                id=topic_id,
+                content=content,
+                database_=self.database
+            )
+            logger.info(f"Updated content for Topic {topic_id}.")
+        except Exception as err:
+            logger.error(f"[red]Error updating content for Topic {topic_id}[/red]: {err}")
+            raise
+
 
 
 # Global database client instance (lazy initialized or active import)

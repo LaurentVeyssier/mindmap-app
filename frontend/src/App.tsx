@@ -10,6 +10,7 @@ interface Topic {
   id: string;
   title: string;
   description: string;
+  content: string | null;
 }
 
 interface MindmapNode {
@@ -39,7 +40,6 @@ export const App: React.FC = () => {
   const [topic, setTopic] = useState<Topic | null>(null);
   const [nodes, setNodes] = useState<MindmapNode[]>([]);
   const [edges, setEdges] = useState<MindmapEdge[]>([]);
-  const [centerLabel, setCenterLabel] = useState<string>("");
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
   const [selectedNode, setSelectedNode] = useState<{
     id: string;
@@ -47,6 +47,16 @@ export const App: React.FC = () => {
     description: string;
     content: string | null;
     level: number;
+  } | null>(null);
+
+  // Active parent node details (in case of drill down)
+  const [currentParentNode, setCurrentParentNode] = useState<{
+    id: string;
+    label: string;
+    description: string;
+    content: string | null;
+    level: number;
+    has_subgraph?: boolean;
   } | null>(null);
 
   // Dashboard state
@@ -93,9 +103,9 @@ export const App: React.FC = () => {
       setTopic(loadedTopic);
       setNodes(data.nodes);
       setEdges(data.edges);
-      setCenterLabel(loadedTopic.title);
       setBreadcrumbs([]);
       setSelectedNode(null);
+      setCurrentParentNode(null);
     } catch (err) {
       console.error(err);
       alert("Error loading mindmap from Neo4j database.");
@@ -137,9 +147,9 @@ export const App: React.FC = () => {
       setTopic(data.topic);
       setNodes(data.nodes);
       setEdges(data.edges);
-      setCenterLabel(data.topic.title);
       setBreadcrumbs([]);
       setSelectedNode(null);
+      setCurrentParentNode(null);
     } catch (err) {
       console.error(err);
       alert("Error generating mindmap. Please verify backend is running and Gemini API key is configured.");
@@ -176,6 +186,16 @@ export const App: React.FC = () => {
       if (selectedNode && selectedNode.id === nodeId) {
         setSelectedNode({ ...selectedNode, content: data.content });
       }
+
+      // Update currentParentNode if active
+      if (currentParentNode && currentParentNode.id === nodeId) {
+        setCurrentParentNode({ ...currentParentNode, content: data.content });
+      }
+
+      // Update topic if active
+      if (topic && topic.id === nodeId) {
+        setTopic({ ...topic, content: data.content });
+      }
     } catch (err) {
       console.error(err);
       alert("Failed to generate detailed node guide.");
@@ -208,8 +228,8 @@ export const App: React.FC = () => {
 
       setNodes(data.nodes);
       setEdges(data.edges);
-      setCenterLabel(selectedNode.label);
       setBreadcrumbs(breadcrumbData.breadcrumbs);
+      setCurrentParentNode(selectedNode);
       setSelectedNode(null); // Close sidebar
     } catch (err) {
       console.error(err);
@@ -228,9 +248,9 @@ export const App: React.FC = () => {
       setTopic(null);
       setNodes([]);
       setEdges([]);
-      setCenterLabel("");
       setBreadcrumbs([]);
       setSelectedNode(null);
+      setCurrentParentNode(null);
       return;
     }
 
@@ -251,17 +271,23 @@ export const App: React.FC = () => {
       setEdges(data.edges);
 
       if (levelId === "root") {
-        setCenterLabel(topic.title);
         setBreadcrumbs([]);
+        setCurrentParentNode(null);
       } else {
         // Fetch current active node details for center title
         const nodeDetailRes = await fetch(`http://127.0.0.1:8000/api/mindmap/node/${levelId}/breadcrumbs`);
         const breadcrumbData = await nodeDetailRes.json();
         setBreadcrumbs(breadcrumbData.breadcrumbs);
 
-        const activeCrumb = breadcrumbData.breadcrumbs.find((b: BreadcrumbItem) => b.id === levelId);
-        if (activeCrumb) {
-          setCenterLabel(activeCrumb.label);
+        // Fetch parent details from database
+        try {
+          const parentRes = await fetch(`http://127.0.0.1:8000/api/mindmap/node/${levelId}`);
+          if (parentRes.ok) {
+            const parentData = await parentRes.json();
+            setCurrentParentNode(parentData);
+          }
+        } catch (err) {
+          console.error("Error fetching navigated parent node:", err);
         }
       }
 
@@ -289,9 +315,9 @@ export const App: React.FC = () => {
       setTopic(null);
       setNodes([]);
       setEdges([]);
-      setCenterLabel("");
       setBreadcrumbs([]);
       setSelectedNode(null);
+      setCurrentParentNode(null);
     } catch (err) {
       console.error(err);
       alert("Failed to reset graph.");
@@ -407,27 +433,53 @@ export const App: React.FC = () => {
           )
         ) : (
           // Active Mindmap Canvas Workspace
-          <>
-            <div className="app-content">
-              <MindmapCanvas
-                nodes={nodes}
-                edges={edges}
-                centerLabel={centerLabel}
-                onNodeClick={setSelectedNode}
-              />
-            </div>
-            
-            {selectedNode && (
-              <DetailSidebar
-                node={selectedNode}
-                onClose={() => setSelectedNode(null)}
-                onGenerateContent={handleGenerateContent}
-                onDrillDown={handleDrillDown}
-                isGeneratingContent={isGeneratingContent}
-                isDrillingDown={isDrillingDown}
-              />
-            )}
-          </>
+          (() => {
+            const centerNode = currentParentNode 
+              ? {
+                  id: currentParentNode.id,
+                  label: currentParentNode.label,
+                  description: currentParentNode.description,
+                  content: currentParentNode.content,
+                  level: currentParentNode.level,
+                  has_subgraph: currentParentNode.has_subgraph,
+                }
+              : topic 
+              ? {
+                  id: topic.id,
+                  label: topic.title,
+                  description: topic.description,
+                  content: topic.content,
+                  level: 0,
+                  has_subgraph: false,
+                }
+              : null;
+
+            return (
+              <>
+                <div className="app-content">
+                  {centerNode && (
+                    <MindmapCanvas
+                      nodes={nodes}
+                      edges={edges}
+                      centerNode={centerNode}
+                      onNodeClick={setSelectedNode}
+                    />
+                  )}
+                </div>
+                
+                {selectedNode && (
+                  <DetailSidebar
+                    node={selectedNode}
+                    onClose={() => setSelectedNode(null)}
+                    onGenerateContent={handleGenerateContent}
+                    onDrillDown={handleDrillDown}
+                    isGeneratingContent={isGeneratingContent}
+                    isDrillingDown={isDrillingDown}
+                  />
+                )}
+              </>
+            );
+          })()
         )}
       </main>
     </div>

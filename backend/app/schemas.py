@@ -13,6 +13,8 @@ class TopicResponse(BaseModel):
     id: str = Field(..., description="Unique ID of the topic.")
     title: str = Field(..., description="Title of the topic.")
     description: str = Field(..., description="Brief description of the topic.")
+    content: Optional[str] = Field(None, description="Detailed markdown content generated for the topic.")
+
 
 
 class MindmapNodeSchema(BaseModel):

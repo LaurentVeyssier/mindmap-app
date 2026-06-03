@@ -20,10 +20,19 @@ interface MindmapEdge {
   relation: string;
 }
 
+interface CenterNode {
+  id: string;
+  label: string;
+  description: string;
+  content: string | null;
+  level: number;
+  has_subgraph?: boolean;
+}
+
 interface MindmapCanvasProps {
   nodes: MindmapNode[];
   edges: MindmapEdge[];
-  centerLabel: string;
+  centerNode: CenterNode;
   onNodeClick: (node: {
     id: string;
     label: string;
@@ -39,7 +48,7 @@ interface MindmapCanvasProps {
 export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
   nodes,
   edges,
-  centerLabel,
+  centerNode,
   onNodeClick,
 }) => {
   const fgRef = useRef<any>(null);
@@ -73,13 +82,15 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
   const getGraphData = () => {
     if (nodes.length === 0) return { nodes: [], links: [] };
 
-    const centerNodeId = "center-hub-node";
     const forceNodes = [
       {
-        id: centerNodeId,
-        label: centerLabel,
+        id: centerNode.id,
+        label: centerNode.label,
+        description: centerNode.description,
+        content: centerNode.content,
+        level: centerNode.level,
+        has_subgraph: centerNode.has_subgraph || false,
         isCenter: true,
-        level: nodes[0]?.level || 0,
       },
       ...nodes.map((n) => ({
         id: n.id,
@@ -94,11 +105,11 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
 
     const forceLinks: any[] = [];
 
-    // Add relationships from edges, dynamically mapping links from the parent node (not in nodes array) to center-hub-node
+    // Add relationships from edges, dynamically mapping links from the parent node (not in nodes array) to centerNode.id
     edges.forEach((edge) => {
       const sourceExists = nodes.some((n) => n.id === edge.source);
       forceLinks.push({
-        source: sourceExists ? edge.source : centerNodeId,
+        source: sourceExists ? edge.source : centerNode.id,
         target: edge.target,
         relation: edge.relation,
         isHubLink: !sourceExists,
@@ -129,9 +140,17 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
   }, [nodes, edges]);
 
   const handleNodeClick = (node: any) => {
-    if (node.id === "center-hub-node") return;
-
     setSelectedNodeId(node.id);
+    if (node.id === centerNode.id) {
+      onNodeClick({
+        id: centerNode.id,
+        label: centerNode.label,
+        description: centerNode.description,
+        content: centerNode.content,
+        level: centerNode.level,
+      });
+      return;
+    }
     const originalNode = nodes.find((n) => n.id === node.id);
     if (originalNode) {
       onNodeClick({
@@ -161,7 +180,7 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
             if (typeof node.x !== "number" || typeof node.y !== "number" || isNaN(node.x) || isNaN(node.y)) {
               return;
             }
-            const isCenter = node.id === "center-hub-node";
+            const isCenter = node.id === centerNode.id;
             const isSelected = selectedNodeId === node.id;
             const radius = isCenter ? 14 : 9;
 
