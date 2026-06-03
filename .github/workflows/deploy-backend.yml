@@ -17,6 +17,8 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: production
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
