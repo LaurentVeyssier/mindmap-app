@@ -132,3 +132,6 @@ Ensure you have a running Neo4j Instance (Aura DB Free tier or local Desktop) an
    npm run dev
    ```
 4. Open your browser and navigate to `http://localhost:5173/`.
+
+
+### AZURE CONTAINER APP DEPLOYMENT 
