@@ -277,7 +277,7 @@ export const App: React.FC = () => {
         setNodes((prevNodes) =>
           prevNodes.map((n) => (n.id === nodeId ? { ...n, content: completedData.content } : n))
         );
-        
+
         // Update selected node state for sidebar
         if (selectedNode && selectedNode.id === nodeId) {
           setSelectedNode({ ...selectedNode, content: completedData.content });
@@ -439,7 +439,7 @@ export const App: React.FC = () => {
       if (!response.ok) {
         throw new Error("Failed to clear database.");
       }
-      
+
       // Reset local state to show initial configuration panel
       setTopic(null);
       setNodes([]);
@@ -472,7 +472,7 @@ export const App: React.FC = () => {
         {topic && (
           <button onClick={handleReset} className="btn-reset-header">
             <RotateCcw size={14} />
-            Reset Graph
+            Remove Graph
           </button>
         )}
       </header>
@@ -488,14 +488,14 @@ export const App: React.FC = () => {
                       {loadingSteps.some(s => s.id === "writer")
                         ? "Generating Detailed Guide"
                         : currentParentNode
-                        ? "Expanding Sub-graph"
-                        : "Generating Mindmap"}
+                          ? "Expanding Sub-graph"
+                          : "Generating Mindmap"}
                     </h3>
                     <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "6px" }}>
                       Please wait while our agents collaborate.
                     </p>
                   </div>
-                  
+
                   <div className="loading-steps" style={{ textAlign: "left", width: "100%" }}>
                     <div className="step-indicator">
                       {loadingSteps.map((step, index) => (
@@ -540,7 +540,7 @@ export const App: React.FC = () => {
               </div>
 
               <h3 className="section-title">Your Stored Graphs ({mindmaps.length})</h3>
-              
+
               {mindmaps.length > 0 ? (
                 <div className="dashboard-grid">
                   {mindmaps.map((m) => (
@@ -602,17 +602,17 @@ export const App: React.FC = () => {
         ) : (
           // Active Mindmap Canvas Workspace
           (() => {
-            const centerNode = currentParentNode 
+            const centerNode = currentParentNode
               ? {
-                  id: currentParentNode.id,
-                  label: currentParentNode.label,
-                  description: currentParentNode.description,
-                  content: currentParentNode.content,
-                  level: currentParentNode.level,
-                  has_subgraph: currentParentNode.has_subgraph,
-                }
-              : topic 
-              ? {
+                id: currentParentNode.id,
+                label: currentParentNode.label,
+                description: currentParentNode.description,
+                content: currentParentNode.content,
+                level: currentParentNode.level,
+                has_subgraph: currentParentNode.has_subgraph,
+              }
+              : topic
+                ? {
                   id: topic.id,
                   label: topic.title,
                   description: topic.description,
@@ -620,7 +620,7 @@ export const App: React.FC = () => {
                   level: 0,
                   has_subgraph: false,
                 }
-              : null;
+                : null;
 
             return (
               <>
@@ -634,7 +634,7 @@ export const App: React.FC = () => {
                     />
                   )}
                 </div>
-                
+
                 {selectedNode && (
                   <DetailSidebar
                     node={selectedNode}
