@@ -5,7 +5,9 @@ on:
     branches:
       - main
     paths:
-      - 'backend/**' # Triggers only if backend files change
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -19,21 +21,22 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
+      - name: Set lowercased repository owner env
+        run: |
+          echo "IMAGE_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Log in to GitHub Container Registry
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Build, Tag, and Push Docker Image
         run: |
-          # Ensure username is lowercase to prevent Docker errors
-          LOWER_USER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          
           # Build using the backend folder context
-          docker build -t ghcr.io/$LOWER_USER/mindmap-backend:${{ github.sha }} -t ghcr.io/$LOWER_USER/mindmap-backend:latest ./backend
+          docker build -t ghcr.io/${{ env.IMAGE_OWNER }}/mindmap-backend:${{ github.sha }} -t ghcr.io/${{ env.IMAGE_OWNER }}/mindmap-backend:latest ./backend
           
           # Push both tags
-          docker push ghcr.io/$LOWER_USER/mindmap-backend:${{ github.sha }}
-          docker push ghcr.io/$LOWER_USER/mindmap-backend:latest
+          docker push ghcr.io/${{ env.IMAGE_OWNER }}/mindmap-backend:${{ github.sha }}
+          docker push ghcr.io/${{ env.IMAGE_OWNER }}/mindmap-backend:latest
 
       - name: Log in to Azure
         uses: azure/login@v2
@@ -45,4 +48,4 @@ jobs:
         with:
           resourceGroup: mindmap-rg
           containerAppName: mindmap-backend
-          imageToDeploy: ghcr.io/${{ github.repository_owner }}/mindmap-backend:${{ github.sha }}
+          imageToDeploy: ghcr.io/${{ env.IMAGE_OWNER }}/mindmap-backend:${{ github.sha }}
