@@ -9,11 +9,13 @@
 
 ## Backend Stack
 *   **Runtime & Package Manager**: Python >= 3.13, managed using `uv`
-*   **Framework**: FastAPI
+*   **Framework**: FastAPI (supporting real-time NDJSON progress streams using StreamingResponse)
 *   **LLM Integration**: `google-genai` SDK (`from google import genai`)
-*   **Primary LLM Model**: `gemini-2.5-flash`
-*   **Database**: Neo4j (using official `neo4j` package driver)
-*   **Environment management**: `python-dotenv` for loading secrets from `.env`
+*   **Model Configuration (configurable via `.env`)**:
+    *   **Primary LLM Model**: `gemini-2.5-flash` (for drafting planned structures and node articles)
+    *   **Critic LLM Model**: `gemini-3.5-flash` (stronger LLM for review validation and isolation constraints)
+*   **Database**: Neo4j (using official `neo4j` package driver with breadcrumbs hierarchical tracking)
+*   **Environment management**: `python-dotenv` and `pydantic-settings` for config loading and validation from `.env`
 
 ## Conventions & Rules
 1.  **Code Validation**: Always validate python scripts using `uv run python -m py_compile <script_to_validate.py>` after editing/adding code.

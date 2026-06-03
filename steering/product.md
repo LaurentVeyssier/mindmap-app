@@ -19,4 +19,7 @@ The Agentic Mindmap application allows users to explore complex topics by genera
 8.  **Breadcrumb Navigation**: Seamlessly navigate up and down the mindmap hierarchy.
 9.  **Direct Neo4j Sync**: Write to and read from a live Neo4j database instance in real time.
 10. **Mindmaps Dashboard**: View and list all previously generated topics in a sleek dashboard grid, allowing the user to select and load any prior knowledge graph workspace instantly.
+11. **Real-time Construction Progress**: Dynamic step-by-step progress overlay mapping Plan/Write drafting, Critic validation, and Neo4j DB sync stages in real time via NDJSON stream parsing.
+12. **State-Aware MECE Subgraph Isolation**: Injecting positive lineages (breadcrumbs) and negative space boundaries (all other nodes currently in the graph) to keep subgraphs bounded and semantically distinct.
+13. **Altitude-Shifting Zoom**: Forcing the agent to switch from strategic/architectural terminology (root topic level) down to tactical/operational implementation details (drill-down levels).
 
