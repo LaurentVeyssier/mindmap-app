@@ -1,6 +1,6 @@
 import os
 import time
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import uuid
 
 from google import genai
@@ -87,6 +87,18 @@ def harmonize_relation(relation: str) -> str:
     return CANONICAL_SYNONYMS.get(clean, clean)
 
 
+SYSTEM_INSTRUCTION = (
+    "You are an expert Enterprise Architect and Strategy Consultant specializing in MECE "
+    "(Mutually Exclusive, Collectively Exhaustive) structural decompositions. Your goal is to "
+    "break down a topic into a world-class, professional mind map taxonomy.\n\n"
+    "Execution Guidelines:\n"
+    "- Adhere to a strict hierarchical decomposition based on industry best practices for the "
+    "given domain (e.g., Strategy, Systems Engineering, Software Architecture).\n"
+    "- Ensure deep vertical separation (no overlapping sibling nodes) but maintain high "
+    "horizontal traceability (logical flow from left to right / parent to child)."
+)
+
+
 class MindmapAgents:
     """
     Orchestrates the LLM Agents using the new google-genai SDK.
@@ -121,7 +133,7 @@ class MindmapAgents:
         num_nodes: int = 6
     ) -> FullMindmapSchema:
         """
-        Planner Agent: Drafts a 2-level hierarchical tree structure.
+        Planner Agent: Decomposes a topic into a 2-level hierarchical tree structure.
         """
         logger.info(f"Planner Agent: Drafting hierarchical mindmap for [bold cyan]'{topic}'[/bold cyan]...")
         
@@ -131,11 +143,12 @@ class MindmapAgents:
 
         Your job is to break down this topic into a 2-level hierarchical mindmap tree.
         Follow these rules strictly:
-        1. Generate between 5 and 8 main sub-concept nodes (Level 1) representing the major disjoint components of the topic.
-        2. For EACH main sub-concept, generate exactly 3 leaf concepts (Level 2) that further detail, implement, or support it.
-        3. Standardize and homogenize the relationship verbs. Limit relationships (both from the topic to main concepts, and from main concepts to leaves) to standard capitalized relationship verbs. Avoid using multiple different synonyms (e.g. choose either 'COLLECTS' or 'GATHERS', choose either 'PROVIDES' or 'OFFERS').
-        4. Do not include cross-links between sibling concepts; the structure must be a strict tree where each node connects to its parent.
-        5. Keep labels concise (1 to 4 words). Provide a single-sentence description explaining each node's role.
+        1. Generate between 5 to 8 main structural sub-concept nodes (Level 1) representing the major disjoint components of the topic. Ensure maximum semantic distance between these nodes. They must not overlap.
+        2. For EACH main sub-concept, generate exactly 3 distinct foundational sub-points or leaf concepts (Level 2) that further detail, implement, or support it.
+        3. Frame these nodes at an architectural/strategic level (Level 1 and Level 2 depth). Do not dive into execution details yet.
+        4. Standardize and homogenize the relationship verbs. Limit relationships (both from the topic to main concepts, and from main concepts to leaves) to standard capitalized relationship verbs. Avoid using multiple different synonyms (e.g. choose either 'COLLECTS' or 'GATHERS', choose either 'PROVIDES' or 'OFFERS').
+        5. Do not include cross-links between sibling concepts; the structure must be a strict tree where each node connects to its parent.
+        6. Keep labels concise (1 to 4 words). Provide a single-sentence description explaining each node's role.
         """
 
         for attempt in range(4):
@@ -144,6 +157,7 @@ class MindmapAgents:
                     model=self.model_name,
                     contents=prompt,
                     config={
+                        "system_instruction": SYSTEM_INSTRUCTION,
                         "response_mime_type": "application/json",
                         "response_schema": FullMindmapSchema,
                     }
@@ -189,6 +203,121 @@ class MindmapAgents:
             logger.warning(f"Critic Agent failed to criticize plan: {critic_err}. Using original draft.")
             
         logger.info(f"Planner Agent: Successfully finalized mindmap with {len(decomposition.concepts)} main concepts.")
+        return decomposition
+
+    def plan_subgraph_draft(
+        self,
+        topic: str,
+        parent_node_label: str,
+        parent_node_level: int,
+        lineage_path: List[Dict[str, str]],
+        other_nodes: List[Dict[str, Any]],
+        guidelines: Optional[str] = None
+    ) -> FullMindmapSchema:
+        """
+        Planner Agent: Decomposes a specific node into a 2-level hierarchical subgraph.
+        Applies negative space boundaries and altitude zoom constraints.
+        """
+        logger.info(f"Planner Agent: Drafting subgraph for node [bold cyan]'{parent_node_label}'[/bold cyan]...")
+
+        # Formulate lineage/positive context path
+        lineage_str = " -> ".join([f"'{item['label']}'" for item in lineage_path]) if lineage_path else "None"
+
+        # Formulate established pillars/negative context boundaries
+        boundaries_str = ""
+        if other_nodes:
+            for idx, item in enumerate(other_nodes):
+                boundaries_str += f"- Sibling/Other Node {idx + 1}: '{item['label']}' (Level {item['level']}) - Description: {item['description']}\n"
+        else:
+            boundaries_str = "None"
+
+        prompt = f"""
+        Context Anchor (The Master Graph Boundaries & Lineage):
+        The user is viewing a master mind map for "{topic}". 
+        The active lineage path to the selected node is: {lineage_str}
+        
+        The other established concepts and leaves in the graph (Negative Space Boundaries) are:
+        {boundaries_str}
+
+        Current Task (Deep-Dive Zoom):
+        The user has selected the Node: "{parent_node_label}" (at Level {parent_node_level}). 
+        Your objective is to generate a highly focused, localized 2-level subgraph specifically to decompose this node.
+
+        Strict Isolation Rules:
+        1. DO NOT reuse or repeat concepts from the other established parts of the graph listed under the negative space boundaries.
+        2. Shift your altitude downwards. Move from "strategic/architectural pillars" to "operational, tactical components" (Implementation/Operational level of depth).
+        3. Decompose "{parent_node_label}" into its micro-components (e.g., detail specific algorithms, data formats, microservices, protocols, or concrete operational steps).
+        4. Maintain strict continuity: the root of this subgraph must seamlessly anchor to "{parent_node_label}" without trying to re-explain the overarching topic.
+        5. Generate between 5 to 8 main structural sub-concept nodes (Level 1 of this sub-graph, which corresponds to Level {parent_node_level + 1}) that decompose the selected node. Ensure they do not overlap.
+        6. For EACH sub-concept, generate exactly 3 distinct foundational leaf concepts (Level 2 of this sub-graph, which corresponds to Level {parent_node_level + 2}) detailing or supporting it.
+        7. Standardize and homogenize the relationship verbs. Limit relationships to standard capitalized relationship verbs.
+        8. Keep labels concise (1 to 4 words). Provide a single-sentence description explaining each node's role.
+        """
+
+        for attempt in range(4):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config={
+                        "system_instruction": SYSTEM_INSTRUCTION,
+                        "response_mime_type": "application/json",
+                        "response_schema": FullMindmapSchema,
+                    }
+                )
+                decomposition: FullMindmapSchema = response.parsed
+                # Programmatically harmonize relations
+                for concept in decomposition.concepts:
+                    concept.relation_from_topic = harmonize_relation(concept.relation_from_topic)
+                    for leaf in concept.leaves:
+                        leaf.relation = harmonize_relation(leaf.relation)
+                logger.info(f"Planner Agent: Successfully generated subgraph draft with {len(decomposition.concepts)} Concepts.")
+                return decomposition
+            except Exception as err:
+                err_msg = str(err).upper()
+                is_transient = any(kw in err_msg for kw in ["503", "429", "UNAVAILABLE", "TEMPORARY", "LIMIT", "DEMAND", "RESOURCE"])
+                if is_transient and attempt < 3:
+                    sleep_time = 2 ** attempt
+                    logger.warning(f"Transient Gemini API error in Subgraph Draft (attempt {attempt + 1}/4): {err}. Retrying in {sleep_time}s...")
+                    time.sleep(sleep_time)
+                else:
+                    logger.error(f"[red]Planner Agent Subgraph Draft failed on final attempt[/red]: {err}")
+                    raise
+
+    def plan_subgraph(
+        self,
+        topic: str,
+        parent_node_label: str,
+        parent_node_level: int,
+        lineage_path: List[Dict[str, str]],
+        other_nodes: List[Dict[str, Any]],
+        guidelines: Optional[str] = None
+    ) -> FullMindmapSchema:
+        """
+        Planner Agent: Decomposes a parent node and calls Critic Agent to refine.
+        """
+        decomposition = self.plan_subgraph_draft(
+            topic=topic,
+            parent_node_label=parent_node_label,
+            parent_node_level=parent_node_level,
+            lineage_path=lineage_path,
+            other_nodes=other_nodes,
+            guidelines=guidelines
+        )
+
+        try:
+            decomposition = self.criticize_subgraph_plan(
+                topic=topic,
+                parent_node_label=parent_node_label,
+                lineage_path=lineage_path,
+                other_nodes=other_nodes,
+                draft_plan=decomposition,
+                guidelines=guidelines
+            )
+        except Exception as critic_err:
+            logger.warning(f"Critic Agent failed to criticize subgraph plan: {critic_err}. Using original draft.")
+
+        logger.info(f"Planner Agent: Successfully finalized subgraph with {len(decomposition.concepts)} main concepts.")
         return decomposition
 
     def generate_node_content_draft(
@@ -303,14 +432,15 @@ class MindmapAgents:
         Here is the draft decomposition:
         {draft_str}
 
-        Please review and improve this plan based on the following criteria:
-        1. Disjointness: Ensure all Level 1 concepts are completely disjoint. If there is any semantic overlap, rename or consolidate them to maximize distinctness.
-        2. Clarity & Detail: Ensure descriptions are informative, high-quality, and clearly explain each component's role.
-        3. Strict Tree Structure: Sibling concepts must remain disjoint, and each node must connect to its parent (Level 0 Topic -> Level 1 Concept -> Level 2 Leaves).
-        4. Conciseness: Keep concept and leaf labels short and punchy (1 to 4 words).
-        5. Edge Relationship Standardizing: Use standard, concise capitalized relationship verbs.
+        Please review the proposed decomposition. If you identify any of the following flaws or missing dimensions:
+        1. Overlap or redundancy between sibling concept nodes.
+        2. Descriptions that are not clear, high-quality, or lack descriptive depth.
+        3. Relationship verbs that are non-standard or violate standardized capitalized verbs rules.
+        4. Sibling concepts that cross-link or violate the strict tree structure (exactly 5-8 Level 1 concepts and exactly 3 Level 2 leaves per concept).
         
-        Output the finalized, improved, and polished version of the mindmap schema.
+        Output the finalized, corrected, and improved version of the mindmap schema.
+        
+        ONLY RECOMMEND CHANGES IF YOU IDENTIFY FLAWS OR MISSING DIMENSIONS. Otherwise, return the plan exactly as-is.
         """
 
         for attempt in range(4):
@@ -340,6 +470,95 @@ class MindmapAgents:
                     time.sleep(sleep_time)
                 else:
                     logger.error(f"[red]Critic Agent Plan failed on final attempt[/red]: {err}")
+                    return draft_plan
+
+    def criticize_subgraph_plan(
+        self,
+        topic: str,
+        parent_node_label: str,
+        lineage_path: List[Dict[str, str]],
+        other_nodes: List[Dict[str, Any]],
+        draft_plan: FullMindmapSchema,
+        guidelines: Optional[str] = None
+    ) -> FullMindmapSchema:
+        """
+        Critic Agent: Reviews the draft subgraph plan using a stronger LLM,
+        validating against established context boundaries (Negative Space) and altitude constraints.
+        """
+        logger.info(f"Critic Agent (Model: {self.critic_model_name}): Reviewing draft subgraph plan for '{parent_node_label}'...")
+
+        draft_str = ""
+        for i, concept in enumerate(draft_plan.concepts):
+            draft_str += f"- Concept {i+1}: '{concept.label}' (Relation: '{concept.relation_from_topic}')\n"
+            draft_str += f"  Description: {concept.description}\n"
+            for j, leaf in enumerate(concept.leaves):
+                draft_str += f"    * Leaf {j+1}: '{leaf.label}' (Relation: '{leaf.relation}')\n"
+                draft_str += f"      Description: {leaf.description}\n"
+
+        # Formulate lineage/positive context path
+        lineage_str = " -> ".join([f"'{item['label']}'" for item in lineage_path]) if lineage_path else "None"
+
+        # Formulate established pillars/negative context boundaries
+        boundaries_str = ""
+        if other_nodes:
+            for idx, item in enumerate(other_nodes):
+                boundaries_str += f"- Sibling/Other Node {idx + 1}: '{item['label']}' (Level {item['level']}) - Description: {item['description']}\n"
+        else:
+            boundaries_str = "None"
+
+        prompt = f"""
+        You are a Critic Agent. Your task is to critically review and refine the following draft subgraph decomposition.
+        
+        Context Anchor (The Master Graph Boundaries & Lineage):
+        The master topic is "{topic}". 
+        The active lineage path to the selected node is: {lineage_str}
+        
+        The other established concepts and leaves in the graph (Negative Space Boundaries) are:
+        {boundaries_str}
+
+        Current Task:
+        We are zooming into the node: "{parent_node_label}" to generate a localized subgraph.
+
+        Proposed Subgraph Draft:
+        {draft_str}
+
+        Please review the proposed subgraph decomposition. Check for these flaws or missing dimensions:
+        1. Scope Creep: Duplicate or repeat concepts covered by any other part of the master graph.
+        2. High Altitude: Concepts that are too strategic/abstract instead of micro-components/concrete details.
+        3. Structural correctness: Ensure disjoint concepts with standard capitalized relationship verbs.
+        
+        Output the finalized, corrected, and improved version of the subgraph schema.
+        
+        ONLY RECOMMEND CHANGES IF YOU IDENTIFY FLAWS OR MISSING DIMENSIONS. Otherwise, return the plan exactly as-is.
+        """
+
+        for attempt in range(4):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.critic_model_name,
+                    contents=prompt,
+                    config={
+                        "response_mime_type": "application/json",
+                        "response_schema": FullMindmapSchema,
+                    }
+                )
+                finalized_plan: FullMindmapSchema = response.parsed
+                # Programmatically harmonize relations
+                for concept in finalized_plan.concepts:
+                    concept.relation_from_topic = harmonize_relation(concept.relation_from_topic)
+                    for leaf in concept.leaves:
+                        leaf.relation = harmonize_relation(leaf.relation)
+                logger.info(f"Critic Agent: Successfully reviewed and finalized the subgraph plan.")
+                return finalized_plan
+            except Exception as err:
+                err_msg = str(err).upper()
+                is_transient = any(kw in err_msg for kw in ["503", "429", "UNAVAILABLE", "TEMPORARY", "LIMIT", "DEMAND", "RESOURCE"])
+                if is_transient and attempt < 3:
+                    sleep_time = 2 ** attempt
+                    logger.warning(f"Transient Gemini API error in Critic Subgraph Plan (attempt {attempt + 1}/4): {err}. Retrying in {sleep_time}s...")
+                    time.sleep(sleep_time)
+                else:
+                    logger.error(f"[red]Critic Agent Subgraph Plan failed on final attempt[/red]: {err}")
                     return draft_plan
 
     def criticize_content(

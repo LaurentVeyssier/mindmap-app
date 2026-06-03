@@ -269,14 +269,21 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> StreamingRespons
             yield json.dumps({"status": "completed", "data": final_payload.model_dump()}) + "\n"
             return
 
-        # 1. Decompose the sub-topic
-        yield json.dumps({"step": "planner", "status": "active", "message": f"Planner Agent: Decomposing sub-topic '{parent_node.label}'..."}) + "\n"
+        # 1. Decompose the sub-topic with context and boundaries
+        yield json.dumps({"step": "planner", "status": "active", "message": f"Planner Agent: Decomposing sub-topic '{parent_node.label}' with master graph boundaries..."}) + "\n"
         try:
-            sub_topic_context = f"{parent_node.label} (within the scope of {topic_node.title})"
-            decomposition = agents.plan_topic_draft(
-                topic=sub_topic_context,
-                guidelines=payload.guidelines,
-                num_nodes=6
+            lineage = [{"id": topic_node.id, "label": topic_node.title}] + neo4j_client.get_breadcrumbs(parent_node.id)
+            other_nodes = neo4j_client.get_other_nodes_in_graph(
+                topic_id=parent_node.topic_id,
+                parent_id=parent_node.id
+            )
+            decomposition = agents.plan_subgraph_draft(
+                topic=topic_node.title,
+                parent_node_label=parent_node.label,
+                parent_node_level=parent_node.level,
+                lineage_path=lineage,
+                other_nodes=other_nodes,
+                guidelines=payload.guidelines
             )
             yield json.dumps({"step": "planner", "status": "done", "message": "Planner Agent: Drafted sub-concepts."}) + "\n"
         except Exception as err:
@@ -284,12 +291,15 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> StreamingRespons
             return
 
         # 2. Call Critic Agent
-        yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent (Model: {agents.critic_model_name}): Reviewing sub-graph structure..."}) + "\n"
+        yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent (Model: {agents.critic_model_name}): Reviewing sub-graph structure and boundaries..."}) + "\n"
         try:
-            finalized_decomposition = agents.criticize_plan(
-                topic=sub_topic_context,
-                guidelines=payload.guidelines,
-                draft_plan=decomposition
+            finalized_decomposition = agents.criticize_subgraph_plan(
+                topic=topic_node.title,
+                parent_node_label=parent_node.label,
+                lineage_path=lineage,
+                other_nodes=other_nodes,
+                draft_plan=decomposition,
+                guidelines=payload.guidelines
             )
             yield json.dumps({"step": "critic", "status": "done", "message": "Critic Agent: Refined and consolidated sub-concepts."}) + "\n"
         except Exception as err:

@@ -459,6 +459,36 @@ class Neo4jClient:
             logger.error(f"[red]Error fetching breadcrumbs for {node_id}[/red]: {err}")
             return []
 
+    def get_other_nodes_in_graph(
+        self,
+        topic_id: str,
+        parent_id: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieves all other nodes in the mindmap graph that are not the parent node itself
+        and not descendants of the parent node. Used as negative space boundaries.
+        """
+        query = """
+        MATCH (n:MindmapNode {topic_id: $topic_id})
+        WHERE NOT (n)-[:SUB_GRAPH_OF*0..]->(:MindmapNode {id: $parent_id})
+        RETURN n.label AS label, n.description AS description, n.level AS level
+        """
+        try:
+            records = self.driver.execute_query(
+                query,
+                topic_id=topic_id,
+                parent_id=parent_id,
+                database_=self.database,
+                routing_=RoutingControl.READ
+            )
+            return [
+                {"label": r["label"], "description": r["description"], "level": r["level"]}
+                for r in records.records
+            ]
+        except Exception as err:
+            logger.error(f"[red]Error fetching negative space boundaries[/red]: {err}")
+            return []
+
     def get_all_topics(self) -> List[TopicResponse]:
         """
         Retrieves all Topic nodes saved in Neo4j, sorted by creation time descending.
