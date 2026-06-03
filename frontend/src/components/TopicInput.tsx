@@ -7,6 +7,8 @@ interface TopicInputProps {
   statusMessage: string;
 }
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
 /**
  * Component for entering a topic and configuring guidelines for the mindmap generation.
  */
@@ -26,7 +28,7 @@ export const TopicInput: React.FC<TopicInputProps> = ({
 
   // Check backend health on mount
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/api/health")
+    fetch(`${API_BASE_URL}/api/health`)
       .then((res) => res.json())
       .then((data) => {
         setApiHealth({

@@ -43,6 +43,8 @@ interface LoadingStep {
   message: string;
 }
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
 export const App: React.FC = () => {
   const [topic, setTopic] = useState<Topic | null>(null);
   const [nodes, setNodes] = useState<MindmapNode[]>([]);
@@ -133,7 +135,7 @@ export const App: React.FC = () => {
   // Fetch available topics in database
   const fetchMindmaps = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/mindmaps");
+      const response = await fetch(`${API_BASE_URL}/api/mindmaps`);
       if (response.ok) {
         const data = await response.json();
         setMindmaps(data);
@@ -156,7 +158,7 @@ export const App: React.FC = () => {
     setIsLoading(true);
     setStatusMessage(`Loading workspace '${loadedTopic.title}'...`);
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/mindmap/${loadedTopic.id}/graph`);
+      const response = await fetch(`${API_BASE_URL}/api/mindmap/${loadedTopic.id}/graph`);
       if (!response.ok) {
         throw new Error("Failed to load mindmap graph.");
       }
@@ -187,7 +189,7 @@ export const App: React.FC = () => {
     ]);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/mindmap/create", {
+      const response = await fetch(`${API_BASE_URL}/api/mindmap/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic: topicTitle, guidelines }),
@@ -245,7 +247,7 @@ export const App: React.FC = () => {
     ]);
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/mindmap/node/${nodeId}/generate-content`, {
+      const response = await fetch(`${API_BASE_URL}/api/mindmap/node/${nodeId}/generate-content`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instructions }),
@@ -317,7 +319,7 @@ export const App: React.FC = () => {
     ]);
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/mindmap/node/${nodeId}/drill-down`, {
+      const response = await fetch(`${API_BASE_URL}/api/mindmap/node/${nodeId}/drill-down`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -344,7 +346,7 @@ export const App: React.FC = () => {
 
       if (completedData) {
         // Fetch breadcrumbs for the new level
-        const breadcrumbRes = await fetch(`http://127.0.0.1:8000/api/mindmap/node/${nodeId}/breadcrumbs`);
+        const breadcrumbRes = await fetch(`${API_BASE_URL}/api/mindmap/node/${nodeId}/breadcrumbs`);
         const breadcrumbData = await breadcrumbRes.json();
 
         setNodes(completedData.nodes);
@@ -382,7 +384,7 @@ export const App: React.FC = () => {
     }
 
     // Retrieve topic level
-    let url = `http://127.0.0.1:8000/api/mindmap/${topic.id}/graph`;
+    let url = `${API_BASE_URL}/api/mindmap/${topic.id}/graph`;
     if (levelId !== "root") {
       url += `?parent_id=${levelId}`;
     }
@@ -402,13 +404,13 @@ export const App: React.FC = () => {
         setCurrentParentNode(null);
       } else {
         // Fetch current active node details for center title
-        const nodeDetailRes = await fetch(`http://127.0.0.1:8000/api/mindmap/node/${levelId}/breadcrumbs`);
+        const nodeDetailRes = await fetch(`${API_BASE_URL}/api/mindmap/node/${levelId}/breadcrumbs`);
         const breadcrumbData = await nodeDetailRes.json();
         setBreadcrumbs(breadcrumbData.breadcrumbs);
 
         // Fetch parent details from database
         try {
-          const parentRes = await fetch(`http://127.0.0.1:8000/api/mindmap/node/${levelId}`);
+          const parentRes = await fetch(`${API_BASE_URL}/api/mindmap/node/${levelId}`);
           if (parentRes.ok) {
             const parentData = await parentRes.json();
             setCurrentParentNode(parentData);
@@ -431,7 +433,7 @@ export const App: React.FC = () => {
       return;
     }
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/mindmap/clear", {
+      const response = await fetch(`${API_BASE_URL}/api/mindmap/clear`, {
         method: "DELETE",
       });
       if (!response.ok) {
