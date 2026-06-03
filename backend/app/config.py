@@ -26,8 +26,11 @@ class Settings(BaseSettings):
     neo4j_database: str = "neo4j"
     openai_api_key: Optional[str] = None
     gemini_api_key: Optional[str] = None
+    primary_model: str = "gemini-2.5-flash"
+    critic_model: str = "gemini-3.5-flash"
     port: int = 8000
     host: str = "127.0.0.1"
+
 
 
 # Instantiate settings to be imported by other modules

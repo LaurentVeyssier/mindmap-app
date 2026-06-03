@@ -95,14 +95,16 @@ class MindmapAgents:
     mindmaps and write content for concepts.
     """
 
-    def __init__(self, model_name: str = "gemini-2.5-flash") -> None:
+    def __init__(self, model_name: str = "gemini-2.5-flash", critic_model_name: str = "gemini-3.5-flash") -> None:
         """
         Initializes the Gemini GenAI client.
         
         Args:
             model_name: The Gemini model ID to use (default: gemini-2.5-flash).
+            critic_model_name: The Critic Gemini model ID to use (default: gemini-3.5-flash).
         """
         self.model_name = model_name
+        self.critic_model_name = critic_model_name
         
         # Load API key from settings or environment
         api_key = settings.gemini_api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
@@ -160,7 +162,19 @@ class MindmapAgents:
                     concept.relation_from_topic = harmonize_relation(concept.relation_from_topic)
                     for leaf in concept.leaves:
                         leaf.relation = harmonize_relation(leaf.relation)
-                logger.info(f"Planner Agent: Successfully generated and harmonized {len(decomposition.concepts)} main concepts and their leaf nodes.")
+                logger.info(f"Planner Agent: Successfully generated draft with {len(decomposition.concepts)} Concepts.")
+                
+                # Call Critic Agent to review and refine the planned decomposition
+                try:
+                    decomposition = self.criticize_plan(
+                        topic=topic,
+                        guidelines=guidelines,
+                        draft_plan=decomposition
+                    )
+                except Exception as critic_err:
+                    logger.warning(f"Critic Agent failed to criticize plan: {critic_err}. Using original draft.")
+                    
+                logger.info(f"Planner Agent: Successfully finalized mindmap with {len(decomposition.concepts)} main concepts.")
                 return decomposition
             except Exception as err:
                 err_msg = str(err).upper()
@@ -218,7 +232,21 @@ class MindmapAgents:
                     contents=prompt
                 )
                 content: str = response.text
-                logger.info(f"Content Writer Agent: Successfully wrote detailed article ({len(content)} characters).")
+                logger.info(f"Content Writer Agent: Successfully wrote draft article ({len(content)} characters).")
+                
+                # Call Critic Agent to review and refine the content
+                try:
+                    content = self.criticize_content(
+                        node_label=node_label,
+                        node_description=node_description,
+                        topic_title=topic_title,
+                        parent_label=parent_label,
+                        user_guidelines=user_guidelines,
+                        draft_content=content
+                    )
+                except Exception as critic_err:
+                    logger.warning(f"Critic Agent failed to criticize content: {critic_err}. Using original draft.")
+                    
                 return content
             except Exception as err:
                 err_msg = str(err).upper()
@@ -231,6 +259,138 @@ class MindmapAgents:
                     logger.error(f"[red]Content Writer Agent failed on final attempt[/red]: {err}")
                     raise
 
+    def criticize_plan(
+        self,
+        topic: str,
+        guidelines: Optional[str],
+        draft_plan: FullMindmapSchema
+    ) -> FullMindmapSchema:
+        """
+        Critic Agent: Reviews the draft mindmap plan using a stronger LLM,
+        suggests/applies improvements, and returns the finalized plan.
+        """
+        logger.info(f"Critic Agent (Model: {self.critic_model_name}): Reviewing draft plan for '{topic}'...")
+        
+        draft_str = ""
+        for i, concept in enumerate(draft_plan.concepts):
+            draft_str += f"- Concept {i+1}: '{concept.label}' (Relation: '{concept.relation_from_topic}')\n"
+            draft_str += f"  Description: {concept.description}\n"
+            for j, leaf in enumerate(concept.leaves):
+                draft_str += f"    * Leaf {j+1}: '{leaf.label}' (Relation: '{leaf.relation}')\n"
+                draft_str += f"      Description: {leaf.description}\n"
+
+        prompt = f"""
+        You are a Critic Agent. Your task is to critically review and refine the following draft mindmap decomposition.
+        
+        Main Topic: '{topic}'
+        Guidelines/Context: {guidelines or 'None'}
+        
+        Here is the draft decomposition:
+        {draft_str}
+
+        Please review and improve this plan based on the following criteria:
+        1. Disjointness: Ensure all Level 1 concepts are completely disjoint. If there is any semantic overlap, rename or consolidate them to maximize distinctness.
+        2. Clarity & Detail: Ensure descriptions are informative, high-quality, and clearly explain each component's role.
+        3. Strict Tree Structure: Sibling concepts must remain disjoint, and each node must connect to its parent (Level 0 Topic -> Level 1 Concept -> Level 2 Leaves).
+        4. Conciseness: Keep concept and leaf labels short and punchy (1 to 4 words).
+        5. Edge Relationship Standardizing: Use standard, concise capitalized relationship verbs.
+        
+        Output the finalized, improved, and polished version of the mindmap schema.
+        """
+
+        for attempt in range(4):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.critic_model_name,
+                    contents=prompt,
+                    config={
+                        "response_mime_type": "application/json",
+                        "response_schema": FullMindmapSchema,
+                    }
+                )
+                finalized_plan: FullMindmapSchema = response.parsed
+                # Programmatically harmonize relations to prevent duplicate verbs
+                for concept in finalized_plan.concepts:
+                    concept.relation_from_topic = harmonize_relation(concept.relation_from_topic)
+                    for leaf in concept.leaves:
+                        leaf.relation = harmonize_relation(leaf.relation)
+                logger.info(f"Critic Agent: Successfully reviewed and finalized the plan.")
+                return finalized_plan
+            except Exception as err:
+                err_msg = str(err).upper()
+                is_transient = any(kw in err_msg for kw in ["503", "429", "UNAVAILABLE", "TEMPORARY", "LIMIT", "DEMAND", "RESOURCE"])
+                if is_transient and attempt < 3:
+                    sleep_time = 2 ** attempt
+                    logger.warning(f"Transient Gemini API error in Critic Plan (attempt {attempt + 1}/4): {err}. Retrying in {sleep_time}s...")
+                    time.sleep(sleep_time)
+                else:
+                    logger.error(f"[red]Critic Agent Plan failed on final attempt[/red]: {err}")
+                    return draft_plan
+
+    def criticize_content(
+        self,
+        node_label: str,
+        node_description: str,
+        topic_title: str,
+        parent_label: Optional[str],
+        user_guidelines: Optional[str],
+        draft_content: str
+    ) -> str:
+        """
+        Critic Agent: Reviews the draft markdown content using a stronger LLM,
+        refines and polishes it, and returns the finalized article.
+        """
+        logger.info(f"Critic Agent (Model: {self.critic_model_name}): Reviewing draft article for '{node_label}'...")
+        
+        parent_context = f"Parent concept: '{parent_label}'." if parent_label else ""
+        
+        prompt = f"""
+        You are a Critic Agent. Your task is to critically review and refine the following draft article.
+        
+        Concept Name: '{node_label}'
+        Description: '{node_description}'
+        Part of Topic: '{topic_title}'
+        {parent_context}
+        
+        Additional Writing Guidelines: {user_guidelines or 'None'}
+        
+        Here is the draft article:
+        ---
+        {draft_content}
+        ---
+
+        Please review and improve this draft based on the following criteria:
+        1. Clarity & Flow: Fix any awkward phrasing, grammar, spelling, or flow issues.
+        2. Depth & Detail: Ensure the article is high-quality, comprehensive, and contains deep explanations or relevant code snippets/examples where useful.
+        3. Strict Guideline Compliance: Ensure any user guidelines or constraints are fully respected.
+        4. Markdown Structure: Verify that the document starts directly with the content, uses clean, well-structured headings, bullet points, and code formatting, and contains absolutely no HTML tags.
+        
+        Output the finalized, polished, and improved version of the article.
+        """
+
+        for attempt in range(4):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.critic_model_name,
+                    contents=prompt
+                )
+                finalized_content: str = response.text
+                logger.info(f"Critic Agent: Successfully reviewed and finalized the article ({len(finalized_content)} characters).")
+                return finalized_content
+            except Exception as err:
+                err_msg = str(err).upper()
+                is_transient = any(kw in err_msg for kw in ["503", "429", "UNAVAILABLE", "TEMPORARY", "LIMIT", "DEMAND", "RESOURCE"])
+                if is_transient and attempt < 3:
+                    sleep_time = 2 ** attempt
+                    logger.warning(f"Transient Gemini API error in Critic Content (attempt {attempt + 1}/4): {err}. Retrying in {sleep_time}s...")
+                    time.sleep(sleep_time)
+                else:
+                    logger.error(f"[red]Critic Agent Content failed on final attempt[/red]: {err}")
+                    return draft_content
+
 
 # Global agents client instance
-agents = MindmapAgents()
+agents = MindmapAgents(
+    model_name=settings.primary_model,
+    critic_model_name=settings.critic_model
+)
