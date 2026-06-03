@@ -1,5 +1,7 @@
 # Agentic MECE Mindmap Builder
 
+[![Build and Deploy Backend via Raw Docker](https://github.com/LaurentVeyssier/mindmap-app/actions/workflows/deploy-backend.yml/badge.svg)](https://github.com/LaurentVeyssier/mindmap-app/actions/workflows/deploy-backend.yml)
+
 An enterprise-grade, agent-driven visual knowledge graph builder that decomposes complex subjects into **MECE (Mutually Exclusive, Collectively Exhaustive)** structural taxonomies. The system coordinates specialized Gemini agents (Planner, Content Writer, and Critic) to draft, refine, and dynamically drill down into concept subgraphs, persisted in real time to a **Neo4j Graph Database**.
 
 ---
