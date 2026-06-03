@@ -174,7 +174,7 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
           onNodeClick={handleNodeClick}
           backgroundColor="#050811"
           cooldownTicks={120} // Let simulation settle quickly
-          
+
           // --- Custom Node Drawing (Canvas) ---
           nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
             if (typeof node.x !== "number" || typeof node.y !== "number" || isNaN(node.x) || isNaN(node.y)) {
@@ -182,7 +182,10 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
             }
             const isCenter = node.id === centerNode.id;
             const isSelected = selectedNodeId === node.id;
-            const radius = isCenter ? 14 : 9;
+            const radius = isCenter ? 28
+              : node.level === 1
+                ? 20  // Level 1 Concepts
+                : 12;  // Level 2 Leaves
 
             // Draw glowing drop-shadow on selected node
             if (isSelected) {
@@ -199,8 +202,13 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
               gradient.addColorStop(0, "#f59e0b");
               gradient.addColorStop(1, "#1e293b");
             } else {
-              gradient.addColorStop(0, "#475569");
-              gradient.addColorStop(1, "#0f172a");
+              if (node.level === 1) {
+                gradient.addColorStop(0, "#f17863ff"); // Indigo for Level 1 Concepts
+                gradient.addColorStop(1, "#4b1e1bff");
+              } else {
+                gradient.addColorStop(0, "#475569"); // Grey for Level 2 Leaves
+                gradient.addColorStop(1, "#0f172a");
+              }
             }
 
             ctx.fillStyle = gradient;
@@ -225,7 +233,7 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
             ctx.fillStyle = isSelected ? "#f59e0b" : isCenter ? "#fbbf24" : "#cbd5e1";
             ctx.textAlign = "center";
             ctx.textBaseline = "top";
-            
+
             ctx.fillText(label, node.x, node.y + radius + 5);
 
             // Draw Symbols below label text
@@ -242,14 +250,14 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
               ctx.font = `bold ${symbolFontSize}px Outfit, sans-serif`;
               ctx.textBaseline = "top";
               ctx.textAlign = "center";
-              
+
               const spacing = 8 / Math.max(0.65, globalScale * 0.75);
               const widths = symbols.map(s => ctx.measureText(s.text).width);
               const totalWidth = widths.reduce((a, b) => a + b, 0) + (symbols.length - 1) * spacing;
-              
+
               let currentX = node.x - totalWidth / 2;
               const symbolsY = node.y + radius + 5 + fontSize + 3;
-              
+
               symbols.forEach((sym, idx) => {
                 ctx.fillStyle = sym.color;
                 ctx.fillText(sym.text, currentX + widths[idx] / 2, symbolsY);
@@ -290,12 +298,12 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
             if (label && globalScale > 0.45) {
               const midX = (link.source.x + link.target.x) / 2;
               const midY = (link.source.y + link.target.y) / 2;
-              
+
               const fontSize = 10.5 / globalScale;
               ctx.font = `bold ${fontSize}px Outfit, sans-serif`;
               const textWidth = ctx.measureText(label).width;
               const padding = 3.5 / globalScale;
-              
+
               // Draw capsule background
               ctx.fillStyle = "rgba(5, 8, 17, 0.92)";
               ctx.fillRect(
@@ -304,7 +312,7 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
                 textWidth + padding * 2,
                 fontSize + padding * 2
               );
-              
+
               // Capsule border
               ctx.strokeStyle = "rgba(148, 163, 184, 0.15)";
               ctx.lineWidth = 0.5 / globalScale;
@@ -314,7 +322,7 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
                 textWidth + padding * 2,
                 fontSize + padding * 2
               );
-              
+
               // Label text
               ctx.fillStyle = "rgba(148, 163, 184, 0.85)";
               ctx.textAlign = "center";
