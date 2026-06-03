@@ -15,7 +15,7 @@ from app.schemas import (
     TopicResponse
 )
 
-
+# OPTIONAL
 CANONICAL_SYNONYMS = {
     # Verb variants (singles/plurals/synonyms)
     "GATHER": "COLLECTS",
