@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Network, Sparkles, RotateCcw } from "lucide-react";
 import { TopicInput } from "./components/TopicInput";
 import { MindmapCanvas } from "./components/MindmapCanvas";
@@ -49,11 +49,61 @@ export const App: React.FC = () => {
     level: number;
   } | null>(null);
 
+  // Dashboard state
+  const [mindmaps, setMindmaps] = useState<Topic[]>([]);
+  const [viewMode, setViewMode] = useState<"dashboard" | "create">("dashboard");
+
   // Loading states
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
   const [isDrillingDown, setIsDrillingDown] = useState(false);
+
+  // Fetch available topics in database
+  const fetchMindmaps = async () => {
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/mindmaps");
+      if (response.ok) {
+        const data = await response.json();
+        setMindmaps(data);
+      }
+    } catch (err) {
+      console.error("Error fetching mindmaps list:", err);
+    }
+  };
+
+  // Refetch list when returning to dashboard
+  useEffect(() => {
+    if (topic === null) {
+      fetchMindmaps();
+      setViewMode("dashboard");
+    }
+  }, [topic]);
+
+  // Load an existing topic workspace
+  const handleLoadMindmap = async (loadedTopic: Topic) => {
+    setIsLoading(true);
+    setStatusMessage(`Loading workspace '${loadedTopic.title}'...`);
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/api/mindmap/${loadedTopic.id}/graph`);
+      if (!response.ok) {
+        throw new Error("Failed to load mindmap graph.");
+      }
+      const data = await response.json();
+      setTopic(loadedTopic);
+      setNodes(data.nodes);
+      setEdges(data.edges);
+      setCenterLabel(loadedTopic.title);
+      setBreadcrumbs([]);
+      setSelectedNode(null);
+    } catch (err) {
+      console.error(err);
+      alert("Error loading mindmap from Neo4j database.");
+    } finally {
+      setIsLoading(false);
+      setStatusMessage("");
+    }
+  };
 
   // Submit main topic config to backend agents
   const handleTopicSubmit = async (topicTitle: string, guidelines: string) => {
@@ -174,7 +224,7 @@ export const App: React.FC = () => {
     if (!topic) return;
 
     if (levelId === null) {
-      // Return to homepage
+      // Return to dashboard
       setTopic(null);
       setNodes([]);
       setEdges([]);
@@ -251,7 +301,7 @@ export const App: React.FC = () => {
   return (
     <div className="app-container">
       <header className="app-header">
-        <div className="brand-section">
+        <div className="brand-section" onClick={() => setTopic(null)} style={{ cursor: "pointer" }}>
           <Network className="brand-logo" size={24} />
           <h1>Agentic Mindmap</h1>
         </div>
@@ -273,50 +323,111 @@ export const App: React.FC = () => {
       </header>
 
       <main className="app-main">
-        {!topic ? (
-          // Topic configuration homepage
-          <div className="app-sidebar">
-            <TopicInput
-              onSubmit={handleTopicSubmit}
-              isLoading={isLoading}
-              statusMessage={statusMessage}
-            />
-          </div>
-        ) : null}
-
-        {/* Central interactive canvas */}
-        <div className="app-content">
-          {topic ? (
-            <MindmapCanvas
-              nodes={nodes}
-              edges={edges}
-              centerLabel={centerLabel}
-              onNodeClick={setSelectedNode}
-            />
-          ) : (
-            <div className="canvas-placeholder">
-              <div className="placeholder-card card">
-                <Sparkles size={48} />
-                <h3>No Active Mindmap</h3>
-                <p>
-                  Use the left dashboard panel to submit a topic domain. AI agents will immediately draft
-                  and structure a visual graph schema for you.
-                </p>
-              </div>
+        {isLoading && (
+          <div className="loading-overlay">
+            <div className="loading-card card">
+              <span className="spinner"></span>
+              <p>{statusMessage}</p>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Selected node details editor side drawer */}
-        {selectedNode && (
-          <DetailSidebar
-            node={selectedNode}
-            onClose={() => setSelectedNode(null)}
-            onGenerateContent={handleGenerateContent}
-            onDrillDown={handleDrillDown}
-            isGeneratingContent={isGeneratingContent}
-            isDrillingDown={isDrillingDown}
-          />
+        {!topic ? (
+          viewMode === "dashboard" ? (
+            <div className="dashboard-container">
+              <div className="dashboard-hero">
+                <Network className="hero-logo" size={48} />
+                <h2>AI Mindmaps Workspace</h2>
+                <p>Navigate and explore your conceptual knowledge graphs, or start a new generation.</p>
+                <button onClick={() => setViewMode("create")} className="btn btn-primary mt-3">
+                  <Sparkles size={16} />
+                  Create New Mindmap
+                </button>
+              </div>
+
+              <h3 className="section-title">Your Stored Graphs ({mindmaps.length})</h3>
+              
+              {mindmaps.length > 0 ? (
+                <div className="dashboard-grid">
+                  {mindmaps.map((m) => (
+                    <div key={m.id} className="mindmap-card card">
+                      <div className="card-body">
+                        <h3>{m.title}</h3>
+                        <p>{m.description || "No description provided."}</p>
+                      </div>
+                      <div className="card-actions">
+                        <button
+                          onClick={() => handleLoadMindmap(m)}
+                          className="btn btn-secondary w-full"
+                        >
+                          Load Workspace
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-dashboard card">
+                  <Sparkles size={32} />
+                  <p>No saved mindmaps found in your database.</p>
+                  <button onClick={() => setViewMode("create")} className="btn btn-secondary mt-2">
+                    Create Your First Graph
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            // Splitted view for creation (Sidebar + placeholder canvas)
+            <>
+              <div className="app-sidebar">
+                <div className="creation-nav-back">
+                  <button onClick={() => setViewMode("dashboard")} className="btn-back-dashboard">
+                    &larr; Back to Dashboard
+                  </button>
+                </div>
+                <TopicInput
+                  onSubmit={handleTopicSubmit}
+                  isLoading={isLoading}
+                  statusMessage={statusMessage}
+                />
+              </div>
+              <div className="app-content">
+                <div className="canvas-placeholder">
+                  <div className="placeholder-card card">
+                    <Sparkles size={48} />
+                    <h3>No Active Mindmap</h3>
+                    <p>
+                      Use the left panel to submit a topic domain. AI agents will immediately draft
+                      and structure a visual graph schema for you.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </>
+          )
+        ) : (
+          // Active Mindmap Canvas Workspace
+          <>
+            <div className="app-content">
+              <MindmapCanvas
+                nodes={nodes}
+                edges={edges}
+                centerLabel={centerLabel}
+                onNodeClick={setSelectedNode}
+              />
+            </div>
+            
+            {selectedNode && (
+              <DetailSidebar
+                node={selectedNode}
+                onClose={() => setSelectedNode(null)}
+                onGenerateContent={handleGenerateContent}
+                onDrillDown={handleDrillDown}
+                isGeneratingContent={isGeneratingContent}
+                isDrillingDown={isDrillingDown}
+              />
+            )}
+          </>
         )}
       </main>
     </div>

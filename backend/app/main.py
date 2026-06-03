@@ -81,6 +81,18 @@ def import_api_key_check() -> bool:
     return bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
 
 
+@app.get("/api/mindmaps", response_model=List[TopicResponse])
+def list_mindmaps() -> List[TopicResponse]:
+    """
+    Retrieves all created mindmaps (topics) from the Neo4j database.
+    """
+    try:
+        return neo4j_client.get_all_topics()
+    except Exception as err:
+        logger.error(f"[red]Failed to fetch mindmaps[/red]: {err}")
+        raise HTTPException(status_code=500, detail=str(err))
+
+
 @app.post("/api/mindmap/create", response_model=GraphResponse)
 def create_mindmap(payload: TopicCreate) -> GraphResponse:
     """

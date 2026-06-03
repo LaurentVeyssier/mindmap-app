@@ -48,9 +48,9 @@ mindmap-app/
 *   `app/config.py`: Loads and parses environment configuration using Pydantic BaseSettings. Validates Neo4j credentials and LLM API keys.
 *   `app/logger.py`: Sets up a customized logger with Rich standard logging handler to present color-coded console logs.
 *   `app/schemas.py`: Houses data models representing Neo4j graph nodes and edges, API payloads, and expected Gemini Pydantic schemas.
-*   `app/neo4j_client.py`: Provides transaction methods to safely write, update, clear, and traverse graphs.
+*   `app/neo4j_client.py`: Provides transaction methods to safely write, update, clear, and traverse graphs, and retrieve all stored mindmap topics.
 *   `app/agents.py`: Uses the Google GenAI SDK to interact with the LLM. Implements three agent modules (Planner, Homogenizer, Content Writer).
-*   `app/main.py`: Sets up the web server, CORS policies, routes HTTP requests, and connects request payloads to backend agents.
+*   `app/main.py`: Sets up the web server, CORS policies, routes HTTP requests (including listing and retrieving mindmaps), and connects request payloads to backend agents.
 
 ### Frontend
 

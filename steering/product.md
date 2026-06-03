@@ -18,3 +18,5 @@ The Agentic Mindmap application allows users to explore complex topics by genera
 7.  **Sub-graph Drill-down**: Click a node to generate a sub-graph detailing that specific node's sub-topics, moving the UI focus into a new hierarchical level.
 8.  **Breadcrumb Navigation**: Seamlessly navigate up and down the mindmap hierarchy.
 9.  **Direct Neo4j Sync**: Write to and read from a live Neo4j database instance in real time.
+10. **Mindmaps Dashboard**: View and list all previously generated topics in a sleek dashboard grid, allowing the user to select and load any prior knowledge graph workspace instantly.
+

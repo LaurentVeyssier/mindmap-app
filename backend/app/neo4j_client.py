@@ -456,6 +456,37 @@ class Neo4jClient:
             logger.error(f"[red]Error fetching breadcrumbs for {node_id}[/red]: {err}")
             return []
 
+    def get_all_topics(self) -> List[TopicResponse]:
+        """
+        Retrieves all Topic nodes saved in Neo4j, sorted by creation time descending.
+        
+        Returns:
+            List[TopicResponse]: The list of topics.
+        """
+        query = """
+        MATCH (t:Topic)
+        RETURN t.id AS id, t.title AS title, t.description AS description
+        ORDER BY t.created_at DESC
+        """
+        try:
+            records = self.driver.execute_query(
+                query,
+                database_=self.database,
+                routing_=RoutingControl.READ,
+                result_transformer_=lambda r: [dict(record) for record in r]
+            )
+            return [
+                TopicResponse(
+                    id=record["id"],
+                    title=record["title"],
+                    description=record["description"]
+                )
+                for record in records
+            ]
+        except Exception as err:
+            logger.error(f"[red]Error fetching all topics[/red]: {err}")
+            return []
+
 
 # Global database client instance (lazy initialized or active import)
 neo4j_client = Neo4jClient()

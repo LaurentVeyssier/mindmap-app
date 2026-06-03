@@ -1,6 +1,6 @@
 import unittest
 from app.config import settings
-from app.schemas import ConceptDecomposition, RelationshipExtraction
+from app.schemas import TopicCreate, TopicResponse, MindmapNodeSchema
 from app.neo4j_client import Neo4jClient
 from app.agents import MindmapAgents
 
@@ -15,8 +15,9 @@ class TestImports(unittest.TestCase):
         Verify that all modules can be imported and initialized.
         """
         self.assertIsNotNone(settings)
-        self.assertIsNotNone(ConceptDecomposition)
-        self.assertIsNotNone(RelationshipExtraction)
+        self.assertIsNotNone(TopicCreate)
+        self.assertIsNotNone(TopicResponse)
+        self.assertIsNotNone(MindmapNodeSchema)
         
         # Test Neo4jClient can be instantiated (without active DB connection check)
         client = Neo4jClient()
@@ -30,3 +31,4 @@ class TestImports(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
