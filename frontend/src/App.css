@@ -436,6 +436,15 @@ body {
   border-color: var(--color-success);
 }
 
+.step-item.failed {
+  color: var(--color-danger);
+}
+
+.step-item.failed .step-bullet {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: var(--color-danger);
+}
+
 .status-toast {
   font-size: 11px;
   font-style: italic;

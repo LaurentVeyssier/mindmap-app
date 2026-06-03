@@ -36,6 +36,13 @@ interface BreadcrumbItem {
   label: string;
 }
 
+interface LoadingStep {
+  id: string;
+  label: string;
+  status: "pending" | "active" | "done" | "failed";
+  message: string;
+}
+
 export const App: React.FC = () => {
   const [topic, setTopic] = useState<Topic | null>(null);
   const [nodes, setNodes] = useState<MindmapNode[]>([]);
@@ -68,6 +75,60 @@ export const App: React.FC = () => {
   const [statusMessage, setStatusMessage] = useState("");
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
   const [isDrillingDown, setIsDrillingDown] = useState(false);
+  const [loadingSteps, setLoadingSteps] = useState<LoadingStep[]>([]);
+
+  // Helper to read NDJSON stream from agent endpoints
+  const handleStreamResponse = async (
+    response: Response,
+    onStepUpdate: (stepId: string, status: "pending" | "active" | "done" | "failed", message: string) => void,
+    onCompleted: (data: any) => void
+  ) => {
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error("ReadableStream not supported by browser");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.status === "error") {
+          throw new Error(event.message || "Unknown error occurred during execution.");
+        }
+        if (event.status === "completed") {
+          onCompleted(event.data);
+          return;
+        }
+        if (event.step) {
+          onStepUpdate(event.step, event.status, event.message || "");
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const event = JSON.parse(buffer);
+      if (event.status === "error") {
+        throw new Error(event.message || "Unknown error occurred during execution.");
+      }
+      if (event.status === "completed") {
+        onCompleted(event.data);
+        return;
+      }
+      if (event.step) {
+        onStepUpdate(event.step, event.status, event.message || "");
+      }
+    }
+  };
 
   // Fetch available topics in database
   const fetchMindmaps = async () => {
@@ -118,16 +179,12 @@ export const App: React.FC = () => {
   // Submit main topic config to backend agents
   const handleTopicSubmit = async (topicTitle: string, guidelines: string) => {
     setIsLoading(true);
-    setStatusMessage("Planner Agent: Decomposing topic...");
-    
-    // Simulate multi-agent steps updates
-    const timer1 = setTimeout(() => {
-      setStatusMessage("Homogenizer Agent: Linking and standardizing relationships...");
-    }, 2500);
-
-    const timer2 = setTimeout(() => {
-      setStatusMessage("Saving graph nodes & properties to Neo4j database...");
-    }, 5500);
+    setStatusMessage("Initializing graph generation...");
+    setLoadingSteps([
+      { id: "planner", label: "Planner Agent", status: "pending", message: "" },
+      { id: "critic", label: "Critic Agent", status: "pending", message: "" },
+      { id: "db", label: "Neo4j Database Sync", status: "pending", message: "" }
+    ]);
 
     try {
       const response = await fetch("http://127.0.0.1:8000/api/mindmap/create", {
@@ -136,26 +193,42 @@ export const App: React.FC = () => {
         body: JSON.stringify({ topic: topicTitle, guidelines }),
       });
 
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-
       if (!response.ok) {
-        throw new Error("Failed to generate mindmap.");
+        const errText = await response.text();
+        throw new Error(errText || "Failed to generate mindmap.");
       }
 
-      const data = await response.json();
-      setTopic(data.topic);
-      setNodes(data.nodes);
-      setEdges(data.edges);
-      setBreadcrumbs([]);
-      setSelectedNode(null);
-      setCurrentParentNode(null);
-    } catch (err) {
+      let completedData: any = null;
+      await handleStreamResponse(
+        response,
+        (stepId, status, message) => {
+          setStatusMessage(message);
+          setLoadingSteps((prev) =>
+            prev.map((s) => (s.id === stepId ? { ...s, status, message } : s))
+          );
+        },
+        (data) => {
+          completedData = data;
+        }
+      );
+
+      if (completedData) {
+        setTopic(completedData.topic);
+        setNodes(completedData.nodes);
+        setEdges(completedData.edges);
+        setBreadcrumbs([]);
+        setSelectedNode(null);
+        setCurrentParentNode(null);
+      } else {
+        throw new Error("No data returned from generation stream.");
+      }
+    } catch (err: any) {
       console.error(err);
-      alert("Error generating mindmap. Please verify backend is running and Gemini API key is configured.");
+      alert(`Error generating mindmap: ${err.message || err}`);
     } finally {
       setIsLoading(false);
       setStatusMessage("");
+      setLoadingSteps([]);
     }
   };
 
@@ -163,6 +236,13 @@ export const App: React.FC = () => {
   const handleGenerateContent = async (nodeId: string, instructions: string) => {
     if (!topic) return;
     setIsGeneratingContent(true);
+    setIsLoading(true);
+    setStatusMessage("Initializing content generation...");
+    setLoadingSteps([
+      { id: "writer", label: "Content Writer Agent", status: "pending", message: "" },
+      { id: "critic", label: "Critic Agent", status: "pending", message: "" },
+      { id: "db", label: "Neo4j Database Sync", status: "pending", message: "" }
+    ]);
 
     try {
       const response = await fetch(`http://127.0.0.1:8000/api/mindmap/node/${nodeId}/generate-content`, {
@@ -172,35 +252,55 @@ export const App: React.FC = () => {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to write article.");
+        const errText = await response.text();
+        throw new Error(errText || "Failed to generate content.");
       }
 
-      const data = await response.json();
-      
-      // Update local nodes array
-      setNodes((prevNodes) =>
-        prevNodes.map((n) => (n.id === nodeId ? { ...n, content: data.content } : n))
+      let completedData: any = null;
+      await handleStreamResponse(
+        response,
+        (stepId, status, message) => {
+          setStatusMessage(message);
+          setLoadingSteps((prev) =>
+            prev.map((s) => (s.id === stepId ? { ...s, status, message } : s))
+          );
+        },
+        (data) => {
+          completedData = data;
+        }
       );
-      
-      // Update selected node state for sidebar
-      if (selectedNode && selectedNode.id === nodeId) {
-        setSelectedNode({ ...selectedNode, content: data.content });
-      }
 
-      // Update currentParentNode if active
-      if (currentParentNode && currentParentNode.id === nodeId) {
-        setCurrentParentNode({ ...currentParentNode, content: data.content });
-      }
+      if (completedData) {
+        // Update local nodes array
+        setNodes((prevNodes) =>
+          prevNodes.map((n) => (n.id === nodeId ? { ...n, content: completedData.content } : n))
+        );
+        
+        // Update selected node state for sidebar
+        if (selectedNode && selectedNode.id === nodeId) {
+          setSelectedNode({ ...selectedNode, content: completedData.content });
+        }
 
-      // Update topic if active
-      if (topic && topic.id === nodeId) {
-        setTopic({ ...topic, content: data.content });
+        // Update currentParentNode if active
+        if (currentParentNode && currentParentNode.id === nodeId) {
+          setCurrentParentNode({ ...currentParentNode, content: completedData.content });
+        }
+
+        // Update topic if active
+        if (topic && topic.id === nodeId) {
+          setTopic({ ...topic, content: completedData.content });
+        }
+      } else {
+        throw new Error("Stream closed without completed payload.");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("Failed to generate detailed node guide.");
+      alert(`Failed to generate detailed node guide: ${err.message || err}`);
     } finally {
       setIsGeneratingContent(false);
+      setIsLoading(false);
+      setStatusMessage("");
+      setLoadingSteps([]);
     }
   };
 
@@ -208,6 +308,13 @@ export const App: React.FC = () => {
   const handleDrillDown = async (nodeId: string) => {
     if (!topic || !selectedNode) return;
     setIsDrillingDown(true);
+    setIsLoading(true);
+    setStatusMessage("Initializing sub-graph generation...");
+    setLoadingSteps([
+      { id: "planner", label: "Planner Agent", status: "pending", message: "" },
+      { id: "critic", label: "Critic Agent", status: "pending", message: "" },
+      { id: "db", label: "Neo4j Database Sync", status: "pending", message: "" }
+    ]);
 
     try {
       const response = await fetch(`http://127.0.0.1:8000/api/mindmap/node/${nodeId}/drill-down`, {
@@ -217,25 +324,45 @@ export const App: React.FC = () => {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to drill down.");
+        const errText = await response.text();
+        throw new Error(errText || "Failed to drill down.");
       }
 
-      const data = await response.json();
-      
-      // Fetch breadcrumbs for the new level
-      const breadcrumbRes = await fetch(`http://127.0.0.1:8000/api/mindmap/node/${nodeId}/breadcrumbs`);
-      const breadcrumbData = await breadcrumbRes.json();
+      let completedData: any = null;
+      await handleStreamResponse(
+        response,
+        (stepId, status, message) => {
+          setStatusMessage(message);
+          setLoadingSteps((prev) =>
+            prev.map((s) => (s.id === stepId ? { ...s, status, message } : s))
+          );
+        },
+        (data) => {
+          completedData = data;
+        }
+      );
 
-      setNodes(data.nodes);
-      setEdges(data.edges);
-      setBreadcrumbs(breadcrumbData.breadcrumbs);
-      setCurrentParentNode(selectedNode);
-      setSelectedNode(null); // Close sidebar
-    } catch (err) {
+      if (completedData) {
+        // Fetch breadcrumbs for the new level
+        const breadcrumbRes = await fetch(`http://127.0.0.1:8000/api/mindmap/node/${nodeId}/breadcrumbs`);
+        const breadcrumbData = await breadcrumbRes.json();
+
+        setNodes(completedData.nodes);
+        setEdges(completedData.edges);
+        setBreadcrumbs(breadcrumbData.breadcrumbs);
+        setCurrentParentNode(selectedNode);
+        setSelectedNode(null); // Close sidebar
+      } else {
+        throw new Error("Stream closed without completed payload.");
+      }
+    } catch (err: any) {
       console.error(err);
-      alert("Failed to build sub-graph for this concept.");
+      alert(`Failed to build sub-graph for this concept: ${err.message || err}`);
     } finally {
       setIsDrillingDown(false);
+      setIsLoading(false);
+      setStatusMessage("");
+      setLoadingSteps([]);
     }
   };
 
@@ -351,9 +478,48 @@ export const App: React.FC = () => {
       <main className="app-main">
         {isLoading && (
           <div className="loading-overlay">
-            <div className="loading-card card">
-              <span className="spinner"></span>
-              <p>{statusMessage}</p>
+            <div className="loading-card card" style={{ maxWidth: "450px", width: "95%" }}>
+              {loadingSteps.length > 0 ? (
+                <>
+                  <div style={{ marginBottom: "20px" }}>
+                    <h3 style={{ fontSize: "18px", fontWeight: 600, color: "var(--text-primary)" }}>
+                      {loadingSteps.some(s => s.id === "writer")
+                        ? "Generating Detailed Guide"
+                        : currentParentNode
+                        ? "Expanding Sub-graph"
+                        : "Generating Mindmap"}
+                    </h3>
+                    <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "6px" }}>
+                      Please wait while our agents collaborate.
+                    </p>
+                  </div>
+                  
+                  <div className="loading-steps" style={{ textAlign: "left", width: "100%" }}>
+                    <div className="step-indicator">
+                      {loadingSteps.map((step, index) => (
+                        <div key={step.id} className={`step-item ${step.status}`}>
+                          <div className="step-bullet">
+                            {step.status === "done" ? "✓" : step.status === "failed" ? "✗" : index + 1}
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "2px", flex: 1 }}>
+                            <span style={{ fontWeight: 600 }}>{step.label}</span>
+                            {step.message && (
+                              <span className="status-toast" style={{ fontSize: "11px", fontStyle: "normal", color: "var(--text-secondary)", marginTop: "2px" }}>
+                                {step.message}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <span className="spinner"></span>
+                  <p>{statusMessage}</p>
+                </>
+              )}
             </div>
           </div>
         )}

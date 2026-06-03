@@ -114,24 +114,16 @@ class MindmapAgents:
             
         self.client = genai.Client(api_key=api_key)
 
-    def plan_topic(
+    def plan_topic_draft(
         self,
         topic: str,
         guidelines: Optional[str] = None,
         num_nodes: int = 6
     ) -> FullMindmapSchema:
         """
-        Planner Agent: Decomposes a topic into a 2-level hierarchical tree structure.
-        
-        Args:
-            topic: The main subject.
-            guidelines: Additional instructions or focus areas.
-            num_nodes: Target number of main concepts (Level 1) to generate (typically 5 to 8).
-            
-        Returns:
-            FullMindmapSchema: Pydantic model containing the complete 2-level mindmap structure.
+        Planner Agent: Drafts a 2-level hierarchical tree structure.
         """
-        logger.info(f"Planner Agent: Planning hierarchical mindmap for [bold cyan]'{topic}'[/bold cyan]...")
+        logger.info(f"Planner Agent: Drafting hierarchical mindmap for [bold cyan]'{topic}'[/bold cyan]...")
         
         prompt = f"""
         Decompose the topic: '{topic}'
@@ -163,31 +155,43 @@ class MindmapAgents:
                     for leaf in concept.leaves:
                         leaf.relation = harmonize_relation(leaf.relation)
                 logger.info(f"Planner Agent: Successfully generated draft with {len(decomposition.concepts)} Concepts.")
-                
-                # Call Critic Agent to review and refine the planned decomposition
-                try:
-                    decomposition = self.criticize_plan(
-                        topic=topic,
-                        guidelines=guidelines,
-                        draft_plan=decomposition
-                    )
-                except Exception as critic_err:
-                    logger.warning(f"Critic Agent failed to criticize plan: {critic_err}. Using original draft.")
-                    
-                logger.info(f"Planner Agent: Successfully finalized mindmap with {len(decomposition.concepts)} main concepts.")
                 return decomposition
             except Exception as err:
                 err_msg = str(err).upper()
                 is_transient = any(kw in err_msg for kw in ["503", "429", "UNAVAILABLE", "TEMPORARY", "LIMIT", "DEMAND", "RESOURCE"])
                 if is_transient and attempt < 3:
                     sleep_time = 2 ** attempt
-                    logger.warning(f"Transient Gemini API error in Planner (attempt {attempt + 1}/4): {err}. Retrying in {sleep_time}s...")
+                    logger.warning(f"Transient Gemini API error in Planner Draft (attempt {attempt + 1}/4): {err}. Retrying in {sleep_time}s...")
                     time.sleep(sleep_time)
                 else:
-                    logger.error(f"[red]Planner Agent failed on final attempt[/red]: {err}")
+                    logger.error(f"[red]Planner Agent Draft failed on final attempt[/red]: {err}")
                     raise
 
-    def generate_node_content(
+    def plan_topic(
+        self,
+        topic: str,
+        guidelines: Optional[str] = None,
+        num_nodes: int = 6
+    ) -> FullMindmapSchema:
+        """
+        Planner Agent: Decomposes a topic and calls Critic Agent to refine.
+        """
+        decomposition = self.plan_topic_draft(topic, guidelines, num_nodes)
+        
+        # Call Critic Agent to review and refine the planned decomposition
+        try:
+            decomposition = self.criticize_plan(
+                topic=topic,
+                guidelines=guidelines,
+                draft_plan=decomposition
+            )
+        except Exception as critic_err:
+            logger.warning(f"Critic Agent failed to criticize plan: {critic_err}. Using original draft.")
+            
+        logger.info(f"Planner Agent: Successfully finalized mindmap with {len(decomposition.concepts)} main concepts.")
+        return decomposition
+
+    def generate_node_content_draft(
         self,
         node_label: str,
         node_description: str,
@@ -196,19 +200,9 @@ class MindmapAgents:
         user_guidelines: Optional[str] = None
     ) -> str:
         """
-        Content Writer Agent: Writes a detailed markdown article about a concept node.
-        
-        Args:
-            node_label: The concept name.
-            node_description: One-sentence summary.
-            topic_title: Title of root topic.
-            parent_label: Parent concept name (if sub-graph).
-            user_guidelines: Custom writing guidelines.
-            
-        Returns:
-            str: Generated markdown text.
+        Content Writer Agent: Drafts a detailed markdown article about a concept node.
         """
-        logger.info(f"Content Writer Agent: Writing detailed content for [bold cyan]'{node_label}'[/bold cyan]...")
+        logger.info(f"Content Writer Agent: Drafting content for [bold cyan]'{node_label}'[/bold cyan]...")
         
         parent_context = f"This is a sub-concept under parent concept: '{parent_label}'." if parent_label else ""
         
@@ -233,31 +227,52 @@ class MindmapAgents:
                 )
                 content: str = response.text
                 logger.info(f"Content Writer Agent: Successfully wrote draft article ({len(content)} characters).")
-                
-                # Call Critic Agent to review and refine the content
-                try:
-                    content = self.criticize_content(
-                        node_label=node_label,
-                        node_description=node_description,
-                        topic_title=topic_title,
-                        parent_label=parent_label,
-                        user_guidelines=user_guidelines,
-                        draft_content=content
-                    )
-                except Exception as critic_err:
-                    logger.warning(f"Critic Agent failed to criticize content: {critic_err}. Using original draft.")
-                    
                 return content
             except Exception as err:
                 err_msg = str(err).upper()
                 is_transient = any(kw in err_msg for kw in ["503", "429", "UNAVAILABLE", "TEMPORARY", "LIMIT", "DEMAND", "RESOURCE"])
                 if is_transient and attempt < 3:
                     sleep_time = 2 ** attempt
-                    logger.warning(f"Transient Gemini API error in Content Writer (attempt {attempt + 1}/4): {err}. Retrying in {sleep_time}s...")
+                    logger.warning(f"Transient Gemini API error in Content Writer Draft (attempt {attempt + 1}/4): {err}. Retrying in {sleep_time}s...")
                     time.sleep(sleep_time)
                 else:
-                    logger.error(f"[red]Content Writer Agent failed on final attempt[/red]: {err}")
+                    logger.error(f"[red]Content Writer Agent Draft failed on final attempt[/red]: {err}")
                     raise
+
+    def generate_node_content(
+        self,
+        node_label: str,
+        node_description: str,
+        topic_title: str,
+        parent_label: Optional[str] = None,
+        user_guidelines: Optional[str] = None
+    ) -> str:
+        """
+        Content Writer Agent: Writes a detailed markdown article and calls Critic Agent to polish.
+        """
+        content = self.generate_node_content_draft(
+            node_label=node_label,
+            node_description=node_description,
+            topic_title=topic_title,
+            parent_label=parent_label,
+            user_guidelines=user_guidelines
+        )
+        
+        # Call Critic Agent to review and refine the content
+        try:
+            content = self.criticize_content(
+                node_label=node_label,
+                node_description=node_description,
+                topic_title=topic_title,
+                parent_label=parent_label,
+                user_guidelines=user_guidelines,
+                draft_content=content
+            )
+        except Exception as critic_err:
+            logger.warning(f"Critic Agent failed to criticize content: {critic_err}. Using original draft.")
+            
+        return content
+
 
     def criticize_plan(
         self,
