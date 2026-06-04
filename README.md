@@ -64,6 +64,15 @@ Before saving graph changes or generating articles, a **Critic Agent** running o
 *   Analyzes structural disjointness, relationship naming, and guideline compliance.
 *   *Strict Validation Rule*: The Critic only recommends changes or regenerates if it identifies flaws or missing dimensions; otherwise, it proceeds with the candidate immediately (no unnecessary latency).
 
+NOTE: Critic Agent can be disabled in the backend settings. Set .env variable USE_CRITIC to False (default is True) to disable it. In Azure, set USE_CRITIC to false in the container settings (environment variables) or through azure CLI:
+
+```azurecli
+az containerapp update `
+  --name mindmap-backend `
+  --resource-group mindmap-rg `
+  --set-env-vars USE_CRITIC=False
+```
+
 ### 4. Interactive Force Graph UI & Navigation
 *   **Breadcrumbs Nav**: Tracks zoom level and anchors navigation back to root or intermediate parent subgraphs.
 *   **Concentric Highlights**: Central hub lines are highlighted with golden glow links, while leaf lines use structural grey branches.
