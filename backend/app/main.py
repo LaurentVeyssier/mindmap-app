@@ -102,6 +102,8 @@ def create_mindmap(payload: TopicCreate) -> StreamingResponse:
     Streams progress updates, finalizing with the GraphResponse payload.
     """
     def event_generator():
+        if not settings.use_critic:
+            yield json.dumps({"step": "critic", "status": "disabled", "message": "Critic Agent: Disabled in settings"}) + "\n"
         # Step 1: Planner Agent
         yield json.dumps({"step": "planner", "status": "active", "message": "Planner Agent: Decomposing topic and drafting 2-level schema..."}) + "\n"
         try:
@@ -274,6 +276,8 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> StreamingRespons
             return
 
         # 1. Decompose the sub-topic with context and boundaries
+        if not settings.use_critic:
+            yield json.dumps({"step": "critic", "status": "disabled", "message": "Critic Agent: Disabled in settings"}) + "\n"
         yield json.dumps({"step": "planner", "status": "active", "message": f"Planner Agent: Decomposing sub-topic '{parent_node.label}' with master graph boundaries..."}) + "\n"
         try:
             lineage = [{"id": topic_node.id, "label": topic_node.title}] + neo4j_client.get_breadcrumbs(parent_node.id)
@@ -417,6 +421,8 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Streaming
                     parent_label = parent_node.label
                     
             # 1. Draft content
+            if not settings.use_critic:
+                yield json.dumps({"step": "critic", "status": "disabled", "message": "Critic Agent: Disabled in settings"}) + "\n"
             yield json.dumps({"step": "writer", "status": "active", "message": f"Content Writer: Drafting comprehensive guide for '{node.label}'..."}) + "\n"
             try:
                 content = agents.generate_node_content_draft(
@@ -467,6 +473,8 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Streaming
                 return
                 
             # 1. Draft content
+            if not settings.use_critic:
+                yield json.dumps({"step": "critic", "status": "disabled", "message": "Critic Agent: Disabled in settings"}) + "\n"
             yield json.dumps({"step": "writer", "status": "active", "message": f"Content Writer: Drafting topic overview guide for '{topic.title}'..."}) + "\n"
             try:
                 content = agents.generate_node_content_draft(
