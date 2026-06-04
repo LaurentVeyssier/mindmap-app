@@ -928,3 +928,33 @@ summary:hover {
   padding: 32px;
 }
 
+/* Mermaid flowchart custom container styling */
+.mermaid-chart {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+  min-height: 100px;
+}
+
+.mermaid-chart svg {
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+.mermaid-error {
+  color: var(--color-danger);
+  font-family: monospace;
+  font-size: 11px;
+  background: rgba(239, 68, 68, 0.05);
+  border: 1px solid rgba(239, 68, 68, 0.1);
+  padding: 8px;
+  border-radius: 4px;
+  width: 100%;
+  overflow-x: auto;
+}
+

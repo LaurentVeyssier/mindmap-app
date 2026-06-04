@@ -1,6 +1,61 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { X, Sparkles, Network, ArrowRight } from "lucide-react";
+import mermaid from "mermaid";
+
+// Initialize mermaid with custom dark theme variables matching our glassmorphism aesthetics
+mermaid.initialize({
+  startOnLoad: false,
+  theme: "dark",
+  securityLevel: "loose",
+  themeVariables: {
+    background: "transparent",
+    primaryColor: "rgba(59, 130, 246, 0.15)",
+    primaryBorderColor: "rgba(59, 130, 246, 0.3)",
+    primaryTextColor: "#e2e8f0",
+    lineColor: "rgba(255, 255, 255, 0.15)",
+    secondaryColor: "rgba(245, 158, 11, 0.15)",
+    tertiaryColor: "rgba(16, 185, 129, 0.15)",
+    actorBkg: "rgba(255, 255, 255, 0.03)",
+    actorBorder: "rgba(255, 255, 255, 0.1)",
+  }
+});
+
+const MermaidRenderer: React.FC<{ chart: string }> = ({ chart }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    
+    // Clear previous SVG content to avoid duplication during updates
+    containerRef.current.innerHTML = "";
+    
+    const id = `mermaid-${Math.floor(Math.random() * 100000)}`;
+    const cleanChart = chart
+      .replace(/^```mermaid\n?/i, "")
+      .replace(/\n?```$/, "");
+
+    try {
+      mermaid.render(id, cleanChart).then(({ svg }) => {
+        if (containerRef.current) {
+          containerRef.current.innerHTML = svg;
+        }
+      }).catch((err) => {
+        console.error("Mermaid render error:", err);
+        if (containerRef.current) {
+          containerRef.current.innerHTML = `<pre class="mermaid-error">Error parsing diagram: ${err.message || err}</pre>`;
+        }
+      });
+    } catch (err: any) {
+      console.error("Mermaid sync render error:", err);
+      if (containerRef.current) {
+        containerRef.current.innerHTML = `<pre class="mermaid-error">Error rendering diagram</pre>`;
+      }
+    }
+  }, [chart]);
+
+  return <div ref={containerRef} className="mermaid-chart" />;
+};
 
 interface NodeData {
   id: string;
@@ -63,7 +118,24 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
           <h4>Detailed Explanation</h4>
           {node.content ? (
             <div className="markdown-viewport">
-              <ReactMarkdown>{node.content}</ReactMarkdown>
+              <ReactMarkdown
+                components={{
+                  code({ children, className, ...rest }) {
+                    const match = /language-(\w+)/.exec(className || "");
+                    const isMermaid = match && match[1] === "mermaid";
+                    if (isMermaid) {
+                      return <MermaidRenderer chart={String(children).replace(/\n$/, "")} />;
+                    }
+                    return (
+                      <code {...rest} className={className}>
+                        {children}
+                      </code>
+                    );
+                  }
+                }}
+              >
+                {node.content}
+              </ReactMarkdown>
             </div>
           ) : (
             <div className="generate-content-prompt">
