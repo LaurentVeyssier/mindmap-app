@@ -546,6 +546,18 @@ def get_breadcrumbs(node_id: str) -> Dict[str, List[Dict[str, str]]]:
     return {"breadcrumbs": breadcrumbs}
 
 
+@app.get("/api/mindmap/{topic_id}/export")
+def export_mindmap(topic_id: str) -> Dict[str, Any]:
+    """
+    Fetches the entire graph (all nodes, edges, content, and root Topic metadata)
+    for a given topic_id, serialized in a single payload.
+    """
+    data = neo4j_client.get_entire_graph(topic_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return data
+
+
 @app.delete("/api/mindmap/clear")
 def clear_database() -> Dict[str, str]:
     """Wipes all graphs and nodes from Neo4j database."""

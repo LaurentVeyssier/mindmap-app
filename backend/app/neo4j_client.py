@@ -546,6 +546,74 @@ class Neo4jClient:
             logger.error(f"[red]Error updating content for Topic {topic_id}[/red]: {err}")
             raise
 
+    def get_entire_graph(self, topic_id: str) -> Dict[str, Any]:
+        """
+        Retrieves the complete tree (all levels, nodes, edges, content, and the root topic metadata)
+        for a given topic_id. Used for exporting/downloading.
+        """
+        topic = self.get_topic(topic_id)
+        if not topic:
+            return {}
+            
+        node_query = """
+        MATCH (n:MindmapNode {topic_id: $topic_id})
+        RETURN n
+        """
+        
+        edge_query = """
+        MATCH (s)-[r]->(t:MindmapNode {topic_id: $topic_id})
+        WHERE ((s:MindmapNode AND s.topic_id = $topic_id) OR (s:Topic AND s.id = $topic_id))
+          AND type(r) <> 'SUB_GRAPH_OF' 
+          AND type(r) <> 'HAS_NODE'
+        RETURN s.id AS source, t.id AS target, coalesce(r.relation, type(r)) AS relation, coalesce(r.id, 'edge-' + s.id + '-' + t.id) AS id
+        """
+        
+        try:
+            # Fetch all nodes
+            records = self.driver.execute_query(
+                node_query,
+                topic_id=topic_id,
+                database_=self.database,
+                routing_=RoutingControl.READ
+            )
+            nodes = []
+            for record in records.records:
+                n_node = record.get("n")
+                if n_node:
+                    nodes.append({
+                        "id": n_node["id"],
+                        "label": n_node["label"],
+                        "description": n_node["description"],
+                        "content": n_node.get("content"),
+                        "level": n_node["level"],
+                        "parent_id": n_node.get("parent_id"),
+                        "sub_graph_parent_id": n_node.get("sub_graph_parent_id"),
+                        "topic_id": n_node["topic_id"]
+                    })
+                    
+            # Fetch all edges
+            edge_records = self.driver.execute_query(
+                edge_query,
+                topic_id=topic_id,
+                database_=self.database,
+                routing_=RoutingControl.READ,
+                result_transformer_=lambda r: [dict(record) for record in r]
+            )
+            
+            return {
+                "topic": {
+                    "id": topic.id,
+                    "title": topic.title,
+                    "description": topic.description,
+                    "content": topic.content
+                },
+                "nodes": nodes,
+                "edges": edge_records
+            }
+        except Exception as err:
+            logger.error(f"[red]Error retrieving entire graph for topic {topic_id}[/red]: {err}")
+            raise
+
 
 
 # Global database client instance (lazy initialized or active import)

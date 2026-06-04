@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { Network, Sparkles, RotateCcw } from "lucide-react";
+import { Network, Sparkles, RotateCcw, Download } from "lucide-react";
 import { TopicInput } from "./components/TopicInput";
 import { MindmapCanvas } from "./components/MindmapCanvas";
 import { DetailSidebar } from "./components/DetailSidebar";
 import { Breadcrumbs } from "./components/Breadcrumbs";
+import { generateStandaloneHtml } from "./utils/exportTemplate";
 import "./App.css";
 
 interface Topic {
@@ -453,6 +454,37 @@ export const App: React.FC = () => {
     }
   };
 
+  // Fetches full graph data and triggers client-side download of standalone interactive HTML viewer
+  const handleExportHtml = async () => {
+    if (!topic) return;
+    setIsLoading(true);
+    setStatusMessage("Exporting interactive mindmap...");
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/mindmap/${topic.id}/export`);
+      if (!response.ok) {
+        throw new Error("Failed to export mindmap graph data.");
+      }
+      const data = await response.json();
+      const htmlContent = generateStandaloneHtml(data);
+      
+      const blob = new Blob([htmlContent], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${topic.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-interactive-mindmap.html`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error("Export failed:", err);
+      alert(`Export failed: ${err.message || err}`);
+    } finally {
+      setIsLoading(false);
+      setStatusMessage("");
+    }
+  };
+
   return (
     <div className="app-container">
       <header className="app-header">
@@ -470,10 +502,16 @@ export const App: React.FC = () => {
         )}
 
         {topic && (
-          <button onClick={handleReset} className="btn-reset-header">
-            <RotateCcw size={14} />
-            Remove Graph
-          </button>
+          <div style={{ display: "flex", gap: "10px" }}>
+            <button onClick={handleExportHtml} className="btn-reset-header" style={{ display: "flex", alignItems: "center", gap: "6px", background: "rgba(59, 130, 246, 0.12)", border: "1px solid rgba(59, 130, 246, 0.25)", color: "#93c5fd" }}>
+              <Download size={14} />
+              Export HTML
+            </button>
+            <button onClick={handleReset} className="btn-reset-header">
+              <RotateCcw size={14} />
+              Remove Graph
+            </button>
+          </div>
         )}
       </header>
 
