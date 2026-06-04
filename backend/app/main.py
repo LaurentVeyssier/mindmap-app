@@ -119,7 +119,7 @@ def create_mindmap(payload: TopicCreate) -> StreamingResponse:
             yield json.dumps({"step": "critic", "status": "disabled", "message": "Critic Agent: Disabled (skipped)"}) + "\n"
             finalized_decomposition = decomposition
         else:
-            yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent (Model: {agents.critic_model_name}): Reviewing structure, relations, and distinctness..."}) + "\n"
+            yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent: Reviewing structure, relations, and distinctness..."}) + "\n"
             try:
                 finalized_decomposition = agents.criticize_plan(payload.topic, payload.guidelines, decomposition)
                 yield json.dumps({"step": "critic", "status": "done", "message": "Critic Agent: Refined and consolidated concepts."}) + "\n"
@@ -303,7 +303,7 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> StreamingRespons
             yield json.dumps({"step": "critic", "status": "disabled", "message": "Critic Agent: Disabled (skipped)"}) + "\n"
             finalized_decomposition = decomposition
         else:
-            yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent (Model: {agents.critic_model_name}): Reviewing sub-graph structure and boundaries..."}) + "\n"
+            yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent: Reviewing sub-graph structure and boundaries..."}) + "\n"
             try:
                 finalized_decomposition = agents.criticize_subgraph_plan(
                     topic=topic_node.title,
@@ -441,7 +441,7 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Streaming
             if not settings.use_critic:
                 yield json.dumps({"step": "critic", "status": "disabled", "message": "Critic Agent: Disabled (skipped)"}) + "\n"
             else:
-                yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent (Model: {agents.critic_model_name}): Polishing and refining article flow..."}) + "\n"
+                yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent: Polishing and refining article flow..."}) + "\n"
                 try:
                     content = agents.criticize_content(
                         node_label=node.label,
@@ -493,7 +493,7 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Streaming
             if not settings.use_critic:
                 yield json.dumps({"step": "critic", "status": "disabled", "message": "Critic Agent: Disabled (skipped)"}) + "\n"
             else:
-                yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent (Model: {agents.critic_model_name}): Polishing and refining topic guide..."}) + "\n"
+                yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent: Polishing and refining topic guide..."}) + "\n"
                 try:
                     content = agents.criticize_content(
                         node_label=topic.title,
