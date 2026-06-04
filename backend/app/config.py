@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     gemini_api_key: Optional[str] = None
     primary_model: str = "gemini-2.5-flash"
     critic_model: str = "gemini-3.5-flash"
+    use_critic: bool = True
     port: int = 8000
     host: str = "127.0.0.1"
 

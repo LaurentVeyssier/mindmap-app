@@ -113,13 +113,17 @@ def create_mindmap(payload: TopicCreate) -> StreamingResponse:
             return
 
         # Step 2: Critic Agent
-        yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent (Model: {agents.critic_model_name}): Reviewing structure, relations, and distinctness..."}) + "\n"
-        try:
-            finalized_decomposition = agents.criticize_plan(payload.topic, payload.guidelines, decomposition)
-            yield json.dumps({"step": "critic", "status": "done", "message": "Critic Agent: Refined and consolidated concepts."}) + "\n"
-        except Exception as err:
-            yield json.dumps({"step": "critic", "status": "failed", "message": f"Critic Agent failed: {err}. Using draft."}) + "\n"
+        if not settings.use_critic:
+            yield json.dumps({"step": "critic", "status": "disabled", "message": "Critic Agent: Disabled (skipped)"}) + "\n"
             finalized_decomposition = decomposition
+        else:
+            yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent (Model: {agents.critic_model_name}): Reviewing structure, relations, and distinctness..."}) + "\n"
+            try:
+                finalized_decomposition = agents.criticize_plan(payload.topic, payload.guidelines, decomposition)
+                yield json.dumps({"step": "critic", "status": "done", "message": "Critic Agent: Refined and consolidated concepts."}) + "\n"
+            except Exception as err:
+                yield json.dumps({"step": "critic", "status": "failed", "message": f"Critic Agent failed: {err}. Using draft."}) + "\n"
+                finalized_decomposition = decomposition
 
         # Step 3: Database Persist
         yield json.dumps({"step": "db", "status": "active", "message": "Neo4j Database: Saving graph nodes and edges..."}) + "\n"
@@ -291,20 +295,24 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> StreamingRespons
             return
 
         # 2. Call Critic Agent
-        yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent (Model: {agents.critic_model_name}): Reviewing sub-graph structure and boundaries..."}) + "\n"
-        try:
-            finalized_decomposition = agents.criticize_subgraph_plan(
-                topic=topic_node.title,
-                parent_node_label=parent_node.label,
-                lineage_path=lineage,
-                other_nodes=other_nodes,
-                draft_plan=decomposition,
-                guidelines=payload.guidelines
-            )
-            yield json.dumps({"step": "critic", "status": "done", "message": "Critic Agent: Refined and consolidated sub-concepts."}) + "\n"
-        except Exception as err:
-            yield json.dumps({"step": "critic", "status": "failed", "message": f"Critic Agent failed: {err}. Using draft."}) + "\n"
+        if not settings.use_critic:
+            yield json.dumps({"step": "critic", "status": "disabled", "message": "Critic Agent: Disabled (skipped)"}) + "\n"
             finalized_decomposition = decomposition
+        else:
+            yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent (Model: {agents.critic_model_name}): Reviewing sub-graph structure and boundaries..."}) + "\n"
+            try:
+                finalized_decomposition = agents.criticize_subgraph_plan(
+                    topic=topic_node.title,
+                    parent_node_label=parent_node.label,
+                    lineage_path=lineage,
+                    other_nodes=other_nodes,
+                    draft_plan=decomposition,
+                    guidelines=payload.guidelines
+                )
+                yield json.dumps({"step": "critic", "status": "done", "message": "Critic Agent: Refined and consolidated sub-concepts."}) + "\n"
+            except Exception as err:
+                yield json.dumps({"step": "critic", "status": "failed", "message": f"Critic Agent failed: {err}. Using draft."}) + "\n"
+                finalized_decomposition = decomposition
 
         # 3. Create sub-nodes (linked to parent) and edges, then persist
         yield json.dumps({"step": "db", "status": "active", "message": "Neo4j Database: Saving sub-graph..."}) + "\n"
@@ -424,19 +432,22 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Streaming
                 return
                 
             # 2. Critic
-            yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent (Model: {agents.critic_model_name}): Polishing and refining article flow..."}) + "\n"
-            try:
-                content = agents.criticize_content(
-                    node_label=node.label,
-                    node_description=node.description,
-                    topic_title=topic.title,
-                    parent_label=parent_label,
-                    user_guidelines=payload.instructions,
-                    draft_content=content
-                )
-                yield json.dumps({"step": "critic", "status": "done", "message": "Critic Agent: Polished and finalized article content."}) + "\n"
-            except Exception as err:
-                yield json.dumps({"step": "critic", "status": "failed", "message": f"Critic Agent failed: {err}. Using draft."}) + "\n"
+            if not settings.use_critic:
+                yield json.dumps({"step": "critic", "status": "disabled", "message": "Critic Agent: Disabled (skipped)"}) + "\n"
+            else:
+                yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent (Model: {agents.critic_model_name}): Polishing and refining article flow..."}) + "\n"
+                try:
+                    content = agents.criticize_content(
+                        node_label=node.label,
+                        node_description=node.description,
+                        topic_title=topic.title,
+                        parent_label=parent_label,
+                        user_guidelines=payload.instructions,
+                        draft_content=content
+                    )
+                    yield json.dumps({"step": "critic", "status": "done", "message": "Critic Agent: Polished and finalized article content."}) + "\n"
+                except Exception as err:
+                    yield json.dumps({"step": "critic", "status": "failed", "message": f"Critic Agent failed: {err}. Using draft."}) + "\n"
                 
             # 3. DB Sync
             yield json.dumps({"step": "db", "status": "active", "message": "Neo4j Database: Saving article content..."}) + "\n"
@@ -471,19 +482,22 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Streaming
                 return
                 
             # 2. Critic
-            yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent (Model: {agents.critic_model_name}): Polishing and refining topic guide..."}) + "\n"
-            try:
-                content = agents.criticize_content(
-                    node_label=topic.title,
-                    node_description=topic.description,
-                    topic_title=topic.title,
-                    parent_label=None,
-                    user_guidelines=payload.instructions,
-                    draft_content=content
-                )
-                yield json.dumps({"step": "critic", "status": "done", "message": "Critic Agent: Polished and finalized topic overview guide."}) + "\n"
-            except Exception as err:
-                yield json.dumps({"step": "critic", "status": "failed", "message": f"Critic Agent failed: {err}. Using draft."}) + "\n"
+            if not settings.use_critic:
+                yield json.dumps({"step": "critic", "status": "disabled", "message": "Critic Agent: Disabled (skipped)"}) + "\n"
+            else:
+                yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent (Model: {agents.critic_model_name}): Polishing and refining topic guide..."}) + "\n"
+                try:
+                    content = agents.criticize_content(
+                        node_label=topic.title,
+                        node_description=topic.description,
+                        topic_title=topic.title,
+                        parent_label=None,
+                        user_guidelines=payload.instructions,
+                        draft_content=content
+                    )
+                    yield json.dumps({"step": "critic", "status": "done", "message": "Critic Agent: Polished and finalized topic overview guide."}) + "\n"
+                except Exception as err:
+                    yield json.dumps({"step": "critic", "status": "failed", "message": f"Critic Agent failed: {err}. Using draft."}) + "\n"
                 
             # 3. DB Sync
             yield json.dumps({"step": "db", "status": "active", "message": "Neo4j Database: Saving topic overview guide..."}) + "\n"

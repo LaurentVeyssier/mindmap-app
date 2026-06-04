@@ -39,7 +39,7 @@ interface BreadcrumbItem {
 interface LoadingStep {
   id: string;
   label: string;
-  status: "pending" | "active" | "done" | "failed";
+  status: "pending" | "active" | "done" | "failed" | "disabled";
   message: string;
 }
 
@@ -501,7 +501,7 @@ export const App: React.FC = () => {
                       {loadingSteps.map((step, index) => (
                         <div key={step.id} className={`step-item ${step.status}`}>
                           <div className="step-bullet">
-                            {step.status === "done" ? "✓" : step.status === "failed" ? "✗" : index + 1}
+                            {step.status === "done" ? "✓" : step.status === "failed" ? "✗" : step.status === "disabled" ? "—" : index + 1}
                           </div>
                           <div style={{ display: "flex", flexDirection: "column", gap: "2px", flex: 1 }}>
                             <span style={{ fontWeight: 600 }}>{step.label}</span>
