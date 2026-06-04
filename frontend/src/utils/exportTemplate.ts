@@ -54,6 +54,7 @@ export const generateStandaloneHtml = (data: ExportData): string => {
   
   <!-- D3 Force Graph -->
   <script src="https://unpkg.com/force-graph"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
   
   <!-- Markdown Parser -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -453,8 +454,15 @@ export const generateStandaloneHtml = (data: ExportData): string => {
         });
 
       // Configure forces
-      graphEngine.d3Force('charge').strength(-260);
-      graphEngine.d3Force('link').distance(link => link.isHubLink ? 85 : 125);
+      graphEngine.d3Force('charge').strength(-400);
+      graphEngine.d3Force('link').distance(link => link.isHubLink ? 150 : 90);
+      graphEngine.d3Force('collide', d3.forceCollide(node => {
+        const radius = node.isCenter ? 24
+          : node.level === 1
+            ? 16  // Level 1 Concepts
+            : 10;  // Level 2 Leaves
+        return radius + 25;
+      }));
 
       // Fit to screen on initial load
       setTimeout(() => {

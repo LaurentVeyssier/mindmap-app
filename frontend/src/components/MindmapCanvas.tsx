@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 // @ts-ignore
 import ForceGraph2D from "react-force-graph-2d";
+// @ts-ignore
+import { forceCollide } from "d3-force-3d";
+
 
 interface MindmapNode {
   id: string;
@@ -127,17 +130,28 @@ export const MindmapCanvas: React.FC<MindmapCanvasProps> = ({
       const fg = fgRef.current;
 
       // Adjust D3 force simulation parameters for optimal layout spacing
-      fg.d3Force("charge").strength(-260);
+      fg.d3Force("charge").strength(-400); // Stronger negative charge for repulsion
       fg.d3Force("link").distance((link: any) => {
-        return link.isHubLink ? 85 : 125;
+        // Hub links (center to Level 1) are longer to give Level 1 concepts more circumference space.
+        // Child links (Level 1 to Level 2 leaves) are shorter to keep sub-tree leaves clustered compactly.
+        return link.isHubLink ? 150 : 90;
       });
+
+      // Add a collision force to prevent overlapping node spheres and labels
+      fg.d3Force("collide", forceCollide((node: any) => {
+        const radius = node.id === centerNode.id ? 28
+          : node.level === 1
+            ? 20  // Level 1 Concepts
+            : 12;  // Level 2 Leaves
+        return radius + 30; // Node radius plus ample padding for label/text spacing
+      }));
 
       // Warm up simulation and automatically center the graph
       setTimeout(() => {
         fg.zoomToFit(500, 70);
       }, 250);
     }
-  }, [nodes, edges]);
+  }, [nodes, edges, centerNode]);
 
   const handleNodeClick = (node: any) => {
     setSelectedNodeId(node.id);
