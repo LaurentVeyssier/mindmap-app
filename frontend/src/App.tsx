@@ -430,15 +430,16 @@ export const App: React.FC = () => {
 
   // Reset the mindmap database and UI state
   const handleReset = async () => {
-    if (!window.confirm("Are you sure you want to clear the database and start over?")) {
+    if (!topic) return;
+    if (!window.confirm("Are you sure you want to remove this mindmap graph? This will delete all its concepts and content.")) {
       return;
     }
     try {
-      const response = await fetch(`${API_BASE_URL}/api/mindmap/clear`, {
+      const response = await fetch(`${API_BASE_URL}/api/mindmap/${topic.id}`, {
         method: "DELETE",
       });
       if (!response.ok) {
-        throw new Error("Failed to clear database.");
+        throw new Error("Failed to delete mindmap graph.");
       }
 
       // Reset local state to show initial configuration panel
@@ -450,7 +451,7 @@ export const App: React.FC = () => {
       setCurrentParentNode(null);
     } catch (err) {
       console.error(err);
-      alert("Failed to reset graph.");
+      alert("Failed to delete graph.");
     }
   };
 

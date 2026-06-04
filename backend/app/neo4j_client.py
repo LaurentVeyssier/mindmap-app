@@ -66,6 +66,26 @@ class Neo4jClient:
             logger.error(f"[red]Error clearing database[/red]: {err}")
             raise
 
+    def delete_topic(self, topic_id: str) -> None:
+        """
+        Deletes a specific Topic and all its associated MindmapNodes and relationships.
+
+        Args:
+            topic_id: The unique ID of the Topic to be deleted.
+        """
+        query = """
+        MATCH (n)
+        WHERE (n:Topic AND n.id = $topic_id) OR (n:MindmapNode AND n.topic_id = $topic_id)
+        DETACH DELETE n
+        """
+        try:
+            self.driver.execute_query(query, topic_id=topic_id, database_=self.database)
+            logger.warning(f"Deleted topic {topic_id} and all its associated nodes.")
+        except Exception as err:
+            logger.error(f"[red]Error deleting topic {topic_id}[/red]: {err}")
+            raise
+
+
     def save_topic(self, topic_id: str, title: str, description: str) -> TopicResponse:
         """
         Saves a new root Topic node.

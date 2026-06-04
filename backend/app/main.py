@@ -600,6 +600,23 @@ def export_mindmap(topic_id: str) -> Dict[str, Any]:
     return data
 
 
+@app.delete("/api/mindmap/{topic_id}")
+def delete_mindmap(topic_id: str) -> Dict[str, str]:
+    """
+    Deletes a specific topic and all its nodes/relationships from the Neo4j database.
+    """
+    try:
+        topic = neo4j_client.get_topic(topic_id)
+        if not topic:
+            raise HTTPException(status_code=404, detail="Topic not found")
+        neo4j_client.delete_topic(topic_id)
+        return {"status": "deleted", "topic_id": topic_id}
+    except HTTPException:
+        raise
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=str(err))
+
+
 @app.delete("/api/mindmap/clear")
 def clear_database() -> Dict[str, str]:
     """Wipes all graphs and nodes from Neo4j database."""
@@ -608,3 +625,4 @@ def clear_database() -> Dict[str, str]:
         return {"status": "cleared"}
     except Exception as err:
         raise HTTPException(status_code=500, detail=str(err))
+
