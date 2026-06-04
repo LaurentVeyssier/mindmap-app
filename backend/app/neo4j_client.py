@@ -614,6 +614,51 @@ class Neo4jClient:
             logger.error(f"[red]Error retrieving entire graph for topic {topic_id}[/red]: {err}")
             raise
 
+    def get_generation_count(self, topic_id: str) -> int:
+        """
+        Returns the total number of generated sub-graphs and detailed descriptions
+        for a given topic_id to enforce usage limits.
+        """
+        # Count sub-graphs (nodes that have had subgraphs generated via drill down)
+        subgraph_query = """
+        MATCH (child:MindmapNode {topic_id: $topic_id})
+        WHERE child.sub_graph_parent_id IS NOT NULL
+        RETURN count(distinct child.sub_graph_parent_id) AS subgraphs_count
+        """
+        
+        # Count nodes and topics with non-null content (detailed descriptions)
+        desc_query = """
+        MATCH (n)
+        WHERE (n:Topic AND n.id = $topic_id AND n.content IS NOT NULL)
+           OR (n:MindmapNode AND n.topic_id = $topic_id AND n.content IS NOT NULL)
+        RETURN count(n) AS descriptions_count
+        """
+        
+        try:
+            subgraph_res = self.driver.execute_query(
+                subgraph_query,
+                topic_id=topic_id,
+                database_=self.database,
+                routing_=RoutingControl.READ,
+                result_transformer_=lambda r: r.single()
+            )
+            subgraphs_count = subgraph_res["subgraphs_count"] if subgraph_res else 0
+            
+            desc_res = self.driver.execute_query(
+                desc_query,
+                topic_id=topic_id,
+                database_=self.database,
+                routing_=RoutingControl.READ,
+                result_transformer_=lambda r: r.single()
+            )
+            descriptions_count = desc_res["descriptions_count"] if desc_res else 0
+            
+            total = subgraphs_count + descriptions_count
+            logger.info(f"Topic {topic_id} usage: {subgraphs_count} subgraphs, {descriptions_count} descriptions. Total: {total}")
+            return total
+        except Exception as err:
+            logger.error(f"[red]Error counting generations for topic {topic_id}[/red]: {err}")
+            return 0
 
 
 # Global database client instance (lazy initialized or active import)

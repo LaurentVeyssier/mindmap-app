@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     primary_model: str = "gemini-2.5-flash"
     critic_model: str = "gemini-3.5-flash"
     use_critic: bool = True
+    max_sub_graph_level: int = 1
+    target_main_nodes: int = 5
+    max_generations: int = 5
     port: int = 8000
     host: str = "127.0.0.1"
 

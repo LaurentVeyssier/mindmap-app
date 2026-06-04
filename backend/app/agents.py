@@ -143,7 +143,7 @@ class MindmapAgents:
 
         Your job is to break down this topic into a 2-level hierarchical mindmap tree.
         Follow these rules strictly:
-        1. Generate between 5 to 8 main structural sub-concept nodes (Level 1) representing the major disjoint components of the topic. Ensure maximum semantic distance between these nodes. They must not overlap.
+        1. Generate exactly {num_nodes} main structural sub-concept nodes (Level 1) representing the major disjoint components of the topic. Ensure maximum semantic distance between these nodes. They must not overlap.
         2. For EACH main sub-concept, generate exactly 3 distinct foundational sub-points or leaf concepts (Level 2) that further detail, implement, or support it.
         3. Frame these nodes at an architectural/strategic level (Level 1 and Level 2 depth). Do not dive into execution details yet.
         4. Standardize and homogenize the relationship verbs. Limit relationships (both from the topic to main concepts, and from main concepts to leaves) to standard capitalized relationship verbs. Avoid using multiple different synonyms (e.g. choose either 'COLLECTS' or 'GATHERS', choose either 'PROVIDES' or 'OFFERS').
@@ -197,7 +197,8 @@ class MindmapAgents:
             decomposition = self.criticize_plan(
                 topic=topic,
                 guidelines=guidelines,
-                draft_plan=decomposition
+                draft_plan=decomposition,
+                num_nodes=num_nodes
             )
         except Exception as critic_err:
             logger.warning(f"Critic Agent failed to criticize plan: {critic_err}. Using original draft.")
@@ -212,7 +213,8 @@ class MindmapAgents:
         parent_node_level: int,
         lineage_path: List[Dict[str, str]],
         other_nodes: List[Dict[str, Any]],
-        guidelines: Optional[str] = None
+        guidelines: Optional[str] = None,
+        num_nodes: int = 5
     ) -> FullMindmapSchema:
         """
         Planner Agent: Decomposes a specific node into a 2-level hierarchical subgraph.
@@ -248,7 +250,7 @@ class MindmapAgents:
         2. Shift your altitude downwards. Move from "strategic/architectural pillars" to "operational, tactical components" (Implementation/Operational level of depth).
         3. Decompose "{parent_node_label}" into its micro-components (e.g., detail specific algorithms, data formats, microservices, protocols, or concrete operational steps).
         4. Maintain strict continuity: the root of this subgraph must seamlessly anchor to "{parent_node_label}" without trying to re-explain the overarching topic.
-        5. Generate between 5 to 8 main structural sub-concept nodes (Level 1 of this sub-graph, which corresponds to Level {parent_node_level + 1}) that decompose the selected node. Ensure they do not overlap.
+        5. Generate exactly {num_nodes} main structural sub-concept nodes (Level 1 of this sub-graph, which corresponds to Level {parent_node_level + 1}) that decompose the selected node. Ensure they do not overlap.
         6. For EACH sub-concept, generate exactly 3 distinct foundational leaf concepts (Level 2 of this sub-graph, which corresponds to Level {parent_node_level + 2}) detailing or supporting it.
         7. Standardize and homogenize the relationship verbs. Limit relationships to standard capitalized relationship verbs.
         8. Keep labels concise (1 to 4 words). Provide a single-sentence description explaining each node's role.
@@ -291,7 +293,8 @@ class MindmapAgents:
         parent_node_level: int,
         lineage_path: List[Dict[str, str]],
         other_nodes: List[Dict[str, Any]],
-        guidelines: Optional[str] = None
+        guidelines: Optional[str] = None,
+        num_nodes: int = 5
     ) -> FullMindmapSchema:
         """
         Planner Agent: Decomposes a parent node and calls Critic Agent to refine.
@@ -302,7 +305,8 @@ class MindmapAgents:
             parent_node_level=parent_node_level,
             lineage_path=lineage_path,
             other_nodes=other_nodes,
-            guidelines=guidelines
+            guidelines=guidelines,
+            num_nodes=num_nodes
         )
 
         try:
@@ -312,7 +316,8 @@ class MindmapAgents:
                 lineage_path=lineage_path,
                 other_nodes=other_nodes,
                 draft_plan=decomposition,
-                guidelines=guidelines
+                guidelines=guidelines,
+                num_nodes=num_nodes
             )
         except Exception as critic_err:
             logger.warning(f"Critic Agent failed to criticize subgraph plan: {critic_err}. Using original draft.")
@@ -407,7 +412,8 @@ class MindmapAgents:
         self,
         topic: str,
         guidelines: Optional[str],
-        draft_plan: FullMindmapSchema
+        draft_plan: FullMindmapSchema,
+        num_nodes: int = 5
     ) -> FullMindmapSchema:
         """
         Critic Agent: Reviews the draft mindmap plan using a stronger LLM,
@@ -436,7 +442,7 @@ class MindmapAgents:
         1. Overlap or redundancy between sibling concept nodes.
         2. Descriptions that are not clear, high-quality, or lack descriptive depth.
         3. Relationship verbs that are non-standard or violate standardized capitalized verbs rules.
-        4. Sibling concepts that cross-link or violate the strict tree structure (exactly 5-8 Level 1 concepts and exactly 3 Level 2 leaves per concept).
+        4. Sibling concepts that cross-link or violate the strict tree structure (exactly {num_nodes} Level 1 concepts and exactly 3 Level 2 leaves per concept).
         
         Output the finalized, corrected, and improved version of the mindmap schema.
         
@@ -479,7 +485,8 @@ class MindmapAgents:
         lineage_path: List[Dict[str, str]],
         other_nodes: List[Dict[str, Any]],
         draft_plan: FullMindmapSchema,
-        guidelines: Optional[str] = None
+        guidelines: Optional[str] = None,
+        num_nodes: int = 5
     ) -> FullMindmapSchema:
         """
         Critic Agent: Reviews the draft subgraph plan using a stronger LLM,
@@ -525,7 +532,7 @@ class MindmapAgents:
         Please review the proposed subgraph decomposition. Check for these flaws or missing dimensions:
         1. Scope Creep: Duplicate or repeat concepts covered by any other part of the master graph.
         2. High Altitude: Concepts that are too strategic/abstract instead of micro-components/concrete details.
-        3. Structural correctness: Ensure disjoint concepts with standard capitalized relationship verbs.
+        3. Structural correctness: Ensure exactly {num_nodes} disjoint concept nodes with standard capitalized relationship verbs.
         
         Output the finalized, corrected, and improved version of the subgraph schema.
         

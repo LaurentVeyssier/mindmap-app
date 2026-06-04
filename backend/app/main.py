@@ -2,7 +2,7 @@ import uuid
 import json
 from typing import Optional, Dict, Any, List
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -108,7 +108,7 @@ def create_mindmap(payload: TopicCreate) -> StreamingResponse:
         yield json.dumps({"step": "planner", "status": "active", "message": "Planner Agent: Decomposing topic and drafting 2-level schema..."}) + "\n"
         try:
             topic_id = str(uuid.uuid4())
-            decomposition = agents.plan_topic_draft(payload.topic, payload.guidelines, 8)
+            decomposition = agents.plan_topic_draft(payload.topic, payload.guidelines, settings.target_main_nodes)
             yield json.dumps({"step": "planner", "status": "done", "message": f"Planner Agent: Drafted {len(decomposition.concepts)} concept areas."}) + "\n"
         except Exception as err:
             yield json.dumps({"step": "planner", "status": "failed", "message": f"Planner Agent failed: {err}"}) + "\n"
@@ -240,27 +240,44 @@ def get_mindmap_graph(
 
 
 @app.post("/api/mindmap/node/{node_id}/drill-down")
-def drill_down_node(node_id: str, payload: DrillDownRequest) -> StreamingResponse:
+def drill_down_node(node_id: str, payload: DrillDownRequest) -> Response:
     """
     Generates a sub-graph for a specific parent node.
     Streams progress updates, finalizing with the GraphResponse payload.
     """
-    def event_generator():
-        parent_node = neo4j_client.get_node(node_id)
-        if not parent_node:
-            yield json.dumps({"status": "error", "message": "Parent node not found"}) + "\n"
-            return
-            
-        topic_node = neo4j_client.get_topic(parent_node.topic_id)
-        if not topic_node:
-            yield json.dumps({"status": "error", "message": "Topic not found"}) + "\n"
-            return
-            
-        # Check if sub-graph already exists in database to prevent regeneration and keep level unchanged
-        existing_nodes, existing_edges = neo4j_client.get_nodes_and_edges(
-            topic_id=parent_node.topic_id,
-            parent_id=parent_node.id
+    parent_node = neo4j_client.get_node(node_id)
+    if not parent_node:
+        raise HTTPException(status_code=404, detail="Parent node not found")
+        
+    topic_node = neo4j_client.get_topic(parent_node.topic_id)
+    if not topic_node:
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+    # Limit maximum sub-graph levels (depth check)
+    if parent_node.level > settings.max_sub_graph_level:
+        return Response(
+            content=f"Usage limit: Drilling down beyond level {settings.max_sub_graph_level} is disabled.",
+            status_code=403,
+            media_type="text/plain"
         )
+
+    # Check if sub-graph already exists in database to prevent regeneration and keep level unchanged
+    existing_nodes, existing_edges = neo4j_client.get_nodes_and_edges(
+        topic_id=parent_node.topic_id,
+        parent_id=parent_node.id
+    )
+
+    # Limit total generations (sub-graphs + descriptions count)
+    if not existing_nodes:
+        total_generations = neo4j_client.get_generation_count(parent_node.topic_id)
+        if total_generations >= settings.max_generations:
+            return Response(
+                content=f"Usage limit: Maximum of {settings.max_generations} generations (subgraphs/articles) reached for this workspace.",
+                status_code=403,
+                media_type="text/plain"
+            )
+
+    def event_generator():
         if existing_nodes:
             logger.info(f"Drill down: Returning existing sub-graph for node '{parent_node.label}' from database.")
             yield json.dumps({"step": "planner", "status": "done", "message": "Planner Agent: Loaded existing sub-graph from Neo4j."}) + "\n"
@@ -291,7 +308,8 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> StreamingRespons
                 parent_node_level=parent_node.level,
                 lineage_path=lineage,
                 other_nodes=other_nodes,
-                guidelines=payload.guidelines
+                guidelines=payload.guidelines,
+                num_nodes=settings.target_main_nodes
             )
             yield json.dumps({"step": "planner", "status": "done", "message": "Planner Agent: Drafted sub-concepts."}) + "\n"
         except Exception as err:
@@ -311,7 +329,8 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> StreamingRespons
                     lineage_path=lineage,
                     other_nodes=other_nodes,
                     draft_plan=decomposition,
-                    guidelines=payload.guidelines
+                    guidelines=payload.guidelines,
+                    num_nodes=settings.target_main_nodes
                 )
                 yield json.dumps({"step": "critic", "status": "done", "message": "Critic Agent: Refined and consolidated sub-concepts."}) + "\n"
             except Exception as err:
@@ -401,13 +420,36 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> StreamingRespons
 
 
 @app.post("/api/mindmap/node/{node_id}/generate-content")
-def generate_node_content(node_id: str, payload: NodeCreateContent) -> StreamingResponse:
+def generate_node_content(node_id: str, payload: NodeCreateContent) -> Response:
     """
     Generates a detailed markdown article/content for a specific concept node or root Topic node.
     Streams progress updates, finalizing with the content payload.
     """
+    node = neo4j_client.get_node(node_id)
+    topic_id = None
+    has_existing_content = False
+
+    if node:
+        topic_id = node.topic_id
+        has_existing_content = node.content is not None
+    else:
+        topic = neo4j_client.get_topic(node_id)
+        if not topic:
+            raise HTTPException(status_code=404, detail="Node or Topic not found")
+        topic_id = topic.id
+        has_existing_content = topic.content is not None
+
+    # Check generation limit if it's a new generation (node has no content yet)
+    if not has_existing_content:
+        total_generations = neo4j_client.get_generation_count(topic_id)
+        if total_generations >= settings.max_generations:
+            return Response(
+                content=f"Usage limit: Maximum of {settings.max_generations} generations (subgraphs/articles) reached for this workspace.",
+                status_code=403,
+                media_type="text/plain"
+            )
+
     def event_generator():
-        node = neo4j_client.get_node(node_id)
         if node:
             topic = neo4j_client.get_topic(node.topic_id)
             if not topic:
