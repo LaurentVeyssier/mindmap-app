@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
-import { X, Sparkles, Network, ArrowRight } from "lucide-react";
+import { X, Sparkles, Network, ArrowRight, Maximize2, Minimize2 } from "lucide-react";
 import mermaid from "mermaid";
 
 // Initialize mermaid with custom dark theme variables matching our glassmorphism aesthetics
@@ -86,6 +86,13 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
   isDrillingDown,
 }) => {
   const [instructions, setInstructions] = useState("");
+  const [width, setWidth] = useState(450);
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Snap back to original width (450px) when moving to another node
+  useEffect(() => {
+    setWidth(450);
+  }, [node?.id]);
 
   if (!node) return null;
 
@@ -94,8 +101,60 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
     onGenerateContent(node.id, instructions);
   };
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    const startX = e.clientX;
+    const startWidth = width;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = startX - moveEvent.clientX; // Moving left increases width
+      // Keep width between 450px and 85% of viewport width
+      const newWidth = Math.max(450, Math.min(window.innerWidth * 0.85, startWidth + deltaX));
+      setWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const toggleExpand = () => {
+    // Toggle between default (450px) and wide (800px) layout
+    setWidth((prev) => (prev >= 800 ? 450 : 800));
+  };
+
   return (
-    <div className="detail-sidebar drawer">
+    <div 
+      className="detail-sidebar drawer"
+      style={{ 
+        width: `${width}px`,
+        transition: isDragging ? "none" : "width 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
+      }}
+    >
+      {/* Resize Handle */}
+      <div 
+        className="resize-handle" 
+        onMouseDown={handleMouseDown}
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: "6px",
+          cursor: "ew-resize",
+          zIndex: 101,
+          background: isDragging ? "rgba(245, 158, 11, 0.3)" : "transparent",
+          borderLeft: isDragging ? "1px solid var(--color-accent)" : "none",
+          transition: "background 0.2s"
+        }}
+      />
+
       <div className="drawer-header">
         <div>
           <span className="node-badge">
@@ -103,9 +162,19 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
           </span>
           <h3>{node.label}</h3>
         </div>
-        <button onClick={onClose} className="btn-close" aria-label="Close panel">
-          <X size={20} />
-        </button>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <button 
+            onClick={toggleExpand} 
+            className="btn-expand" 
+            aria-label={width >= 800 ? "Collapse panel" : "Expand panel"}
+            title={width >= 800 ? "Collapse panel" : "Expand panel"}
+          >
+            {width >= 800 ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          </button>
+          <button onClick={onClose} className="btn-close" aria-label="Close panel">
+            <X size={20} />
+          </button>
+        </div>
       </div>
 
       <div className="drawer-content">

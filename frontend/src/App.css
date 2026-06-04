@@ -526,6 +526,29 @@ body {
   color: var(--text-primary);
 }
 
+.btn-expand {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 50%;
+  transition: var(--transition-smooth);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-expand:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.resize-handle:hover {
+  background: rgba(148, 163, 184, 0.1) !important;
+  border-left: 1px solid rgba(148, 163, 184, 0.2) !important;
+}
+
 .drawer-content {
   flex: 1;
   overflow-y: auto;
@@ -579,9 +602,7 @@ body {
   border: 1px solid var(--border-glass);
   border-radius: 12px;
   padding: 20px;
-  max-height: 350px;
-  overflow-y: auto;
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.7;
 }
 
