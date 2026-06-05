@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Network, Sparkles, RotateCcw, Download } from "lucide-react";
+import { Network, Sparkles, RotateCcw, Download, Server, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
 import { TopicInput } from "./components/TopicInput";
 import { MindmapCanvas } from "./components/MindmapCanvas";
 import { DetailSidebar } from "./components/DetailSidebar";
@@ -72,6 +72,8 @@ export const App: React.FC = () => {
   // Dashboard state
   const [mindmaps, setMindmaps] = useState<Topic[]>([]);
   const [viewMode, setViewMode] = useState<"dashboard" | "create">("dashboard");
+  const [backendStatus, setBackendStatus] = useState<"checking" | "waking_up" | "connected" | "failed">("checking");
+  const [connectionAttempts, setConnectionAttempts] = useState(0);
 
   // Loading states
   const [isLoading, setIsLoading] = useState(false);
@@ -136,13 +138,19 @@ export const App: React.FC = () => {
   // Fetch available topics in database
   const fetchMindmaps = async () => {
     try {
+      setConnectionAttempts((prev) => prev + 1);
       const response = await fetch(`${API_BASE_URL}/api/mindmaps`);
       if (response.ok) {
         const data = await response.json();
         setMindmaps(data);
+        setBackendStatus("connected");
+        setConnectionAttempts(0);
+      } else {
+        setBackendStatus("failed");
       }
     } catch (err) {
       console.error("Error fetching mindmaps list:", err);
+      setBackendStatus("waking_up");
     }
   };
 
@@ -153,6 +161,16 @@ export const App: React.FC = () => {
       setViewMode("dashboard");
     }
   }, [topic]);
+
+  // Poll backend list when it's waking up
+  useEffect(() => {
+    if (backendStatus === "waking_up") {
+      const timer = setTimeout(() => {
+        fetchMindmaps();
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [backendStatus, connectionAttempts]);
 
   // Load an existing topic workspace
   const handleLoadMindmap = async (loadedTopic: Topic) => {
@@ -572,41 +590,121 @@ export const App: React.FC = () => {
                 <Network className="hero-logo" size={48} />
                 <h2>AI Mindmaps Workspace</h2>
                 <p>Navigate and explore your conceptual knowledge graphs, or start a new generation.</p>
-                <button onClick={() => setViewMode("create")} className="btn btn-primary mt-3">
+                <button 
+                  onClick={() => setViewMode("create")} 
+                  className="btn btn-primary mt-3"
+                  disabled={backendStatus !== "connected"}
+                >
                   <Sparkles size={16} />
                   Create New Mindmap
                 </button>
               </div>
 
-              <h3 className="section-title">Your Stored Graphs ({mindmaps.length})</h3>
+              <h3 className="section-title">
+                {backendStatus === "connected" ? `Your Stored Graphs (${mindmaps.length})` : "Your Stored Graphs"}
+              </h3>
 
-              {mindmaps.length > 0 ? (
-                <div className="dashboard-grid">
-                  {mindmaps.map((m) => (
-                    <div key={m.id} className="mindmap-card card">
-                      <div className="card-body">
-                        <h3>{m.title}</h3>
-                        <p>{m.description || "No description provided."}</p>
-                      </div>
-                      <div className="card-actions">
-                        <button
-                          onClick={() => handleLoadMindmap(m)}
-                          className="btn btn-secondary w-full"
-                        >
-                          Load Workspace
-                        </button>
-                      </div>
+              {backendStatus === "checking" && (
+                <div className="backend-connecting-card card">
+                  <div className="connecting-content">
+                    <Loader2 className="spinner icon-gold" size={32} />
+                    <h3>Establishing connection to backend...</h3>
+                    <p>Checking if the mindmap server is online.</p>
+                  </div>
+                </div>
+              )}
+
+              {backendStatus === "waking_up" && (
+                <div className="backend-connecting-card card waking-up">
+                  <div className="connecting-content">
+                    <div className="pulsing-logo-container">
+                      <Server className="pulsing-logo" size={40} />
+                      <span className="ping-signal"></span>
                     </div>
-                  ))}
+                    <h3>Backend Server Waking Up</h3>
+                    <p className="waking-up-desc">
+                      The backend API service is hosted on Azure Container Apps and is currently cold-starting.
+                      This usually takes 20 to 30 seconds as the container instance spins up.
+                    </p>
+                    <div className="progress-bar-container">
+                      <div className="progress-bar-fill animate-progress"></div>
+                    </div>
+                    <div className="connection-attempt-info">
+                      <span>Connection attempts: <strong>{connectionAttempts}</strong></span>
+                      <button 
+                        onClick={() => {
+                          setBackendStatus("checking");
+                          setConnectionAttempts(0);
+                          fetchMindmaps();
+                        }} 
+                        className="btn btn-secondary btn-small mt-2"
+                        style={{ width: "auto", display: "inline-flex", padding: "6px 12px", fontSize: "12px", height: "auto" }}
+                      >
+                        <RefreshCw size={12} className="animate-spin" />
+                        Retry Now
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              ) : (
-                <div className="empty-dashboard card">
-                  <Sparkles size={32} />
-                  <p>No saved mindmaps found in your database.</p>
-                  <button onClick={() => setViewMode("create")} className="btn btn-secondary mt-2">
-                    Create Your First Graph
-                  </button>
+              )}
+
+              {backendStatus === "failed" && (
+                <div className="backend-connecting-card card failed">
+                  <div className="connecting-content">
+                    <AlertTriangle className="icon-danger" size={40} />
+                    <h3>Backend Connection Failed</h3>
+                    <p className="waking-up-desc">
+                      The backend server is online but returned an error or has database connectivity issues.
+                      Please check the server status.
+                    </p>
+                    <button 
+                      onClick={() => {
+                        setBackendStatus("checking");
+                        setConnectionAttempts(0);
+                        fetchMindmaps();
+                      }} 
+                      className="btn btn-primary mt-2" 
+                      style={{ width: "auto", display: "inline-flex", padding: "10px 16px" }}
+                    >
+                      <RefreshCw size={14} />
+                      Retry Connection
+                    </button>
+                  </div>
                 </div>
+              )}
+
+              {backendStatus === "connected" && (
+                mindmaps.length > 0 ? (
+                  <div className="dashboard-grid">
+                    {mindmaps.map((m) => (
+                      <div key={m.id} className="mindmap-card card" onClick={() => handleLoadMindmap(m)}>
+                        <div className="card-body">
+                          <h3>{m.title}</h3>
+                          <p>{m.description || "No description provided."}</p>
+                        </div>
+                        <div className="card-actions">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleLoadMindmap(m);
+                            }}
+                            className="btn btn-secondary w-full"
+                          >
+                            Load Workspace
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-dashboard card">
+                    <Sparkles size={32} />
+                    <p>No saved mindmaps found in your database.</p>
+                    <button onClick={() => setViewMode("create")} className="btn btn-secondary mt-2">
+                      Create Your First Graph
+                    </button>
+                  </div>
+                )
               )}
             </div>
           ) : (
