@@ -112,6 +112,7 @@ def create_mindmap(payload: TopicCreate) -> StreamingResponse:
             yield json.dumps({"step": "planner", "status": "done", "message": f"Planner Agent: Drafted {len(decomposition.concepts)} concept areas."}) + "\n"
         except Exception as err:
             yield json.dumps({"step": "planner", "status": "failed", "message": f"Planner Agent failed: {err}"}) + "\n"
+            yield json.dumps({"status": "error", "message": f"Planner Agent failed: {err}"}) + "\n"
             return
 
         # Step 2: Critic Agent
@@ -205,6 +206,7 @@ def create_mindmap(payload: TopicCreate) -> StreamingResponse:
             yield json.dumps({"step": "db", "status": "done", "message": "Neo4j Database: Graph saved successfully."}) + "\n"
         except Exception as err:
             yield json.dumps({"step": "db", "status": "failed", "message": f"Neo4j Database failed: {err}"}) + "\n"
+            yield json.dumps({"status": "error", "message": f"Neo4j Database failed: {err}"}) + "\n"
             return
             
         final_payload = GraphResponse(
@@ -314,6 +316,7 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> Response:
             yield json.dumps({"step": "planner", "status": "done", "message": "Planner Agent: Drafted sub-concepts."}) + "\n"
         except Exception as err:
             yield json.dumps({"step": "planner", "status": "failed", "message": f"Planner Agent failed: {err}"}) + "\n"
+            yield json.dumps({"status": "error", "message": f"Planner Agent failed: {err}"}) + "\n"
             return
 
         # 2. Call Critic Agent
@@ -407,6 +410,7 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> Response:
             yield json.dumps({"step": "db", "status": "done", "message": "Neo4j Database: Sub-graph saved successfully."}) + "\n"
         except Exception as err:
             yield json.dumps({"step": "db", "status": "failed", "message": f"Neo4j Database failed: {err}"}) + "\n"
+            yield json.dumps({"status": "error", "message": f"Neo4j Database failed: {err}"}) + "\n"
             return
             
         final_payload = GraphResponse(
@@ -477,6 +481,7 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Response:
                 yield json.dumps({"step": "writer", "status": "done", "message": "Content Writer: Completed initial article draft."}) + "\n"
             except Exception as err:
                 yield json.dumps({"step": "writer", "status": "failed", "message": f"Content Writer failed: {err}"}) + "\n"
+                yield json.dumps({"status": "error", "message": f"Content Writer failed: {err}"}) + "\n"
                 return
                 
             # 2. Critic
@@ -504,6 +509,7 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Response:
                 yield json.dumps({"step": "db", "status": "done", "message": "Neo4j Database: Article saved successfully."}) + "\n"
             except Exception as err:
                 yield json.dumps({"step": "db", "status": "failed", "message": f"Neo4j Database failed: {err}"}) + "\n"
+                yield json.dumps({"status": "error", "message": f"Neo4j Database failed: {err}"}) + "\n"
                 return
                 
             yield json.dumps({"status": "completed", "data": {"content": content}}) + "\n"
@@ -529,6 +535,7 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Response:
                 yield json.dumps({"step": "writer", "status": "done", "message": "Content Writer: Completed initial topic guide draft."}) + "\n"
             except Exception as err:
                 yield json.dumps({"step": "writer", "status": "failed", "message": f"Content Writer failed: {err}"}) + "\n"
+                yield json.dumps({"status": "error", "message": f"Content Writer failed: {err}"}) + "\n"
                 return
                 
             # 2. Critic
@@ -556,6 +563,7 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Response:
                 yield json.dumps({"step": "db", "status": "done", "message": "Neo4j Database: Topic guide saved successfully."}) + "\n"
             except Exception as err:
                 yield json.dumps({"step": "db", "status": "failed", "message": f"Neo4j Database failed: {err}"}) + "\n"
+                yield json.dumps({"status": "error", "message": f"Neo4j Database failed: {err}"}) + "\n"
                 return
                 
             yield json.dumps({"status": "completed", "data": {"content": content}}) + "\n"
