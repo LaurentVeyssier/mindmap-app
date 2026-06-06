@@ -122,7 +122,7 @@ Ensure you have a running Neo4j Instance (Aura DB Free tier or local Desktop) an
    NEO4J_PASSWORD=<your-password>
    NEO4J_DATABASE=neo4j
    GEMINI_API_KEY=<your-api-key>
-   PRIMARY_MODEL=gemini-2.5-flash
+   PRIMARY_MODEL=gemini-3.5-flash
    CRITIC_MODEL=gemini-3.5-flash
    ```
 3. Sync python dependencies and run the server using `uv`:
@@ -147,5 +147,53 @@ Ensure you have a running Neo4j Instance (Aura DB Free tier or local Desktop) an
 4. Open your browser and navigate to `http://localhost:5173/`.
 
 
-### AZURE CONTAINER APP DEPLOYMENT 
-- .github\workflows\deploy-backend.yml
+## Production Deployment & Integration
+
+The application uses a decoupled serverless hosting architecture, separating the client interface from the agent orchestration compute engine.
+
+### Frontend Deployment
+*   **Static Hosting**: The React client is compiled into highly optimized static assets (HTML/JS/CSS) via Vite (`npm run build`). These assets are hosted on static web hosting services (such as Azure Static Web Apps, Vercel, Netlify, or GitHub Pages).
+*   **Environment Configuration**: The frontend points to the backend API via the `VITE_API_URL` environment variable during compile time.
+
+### Backend Deployment (Azure Container Apps)
+The application's agent backend is continuously built and deployed to **Azure Container Apps (ACA)** using a serverless containerization flow managed by **GitHub Actions** ([deploy-backend.yml](file:///.github/workflows/deploy-backend.yml)).
+
+#### Deployment Architecture
+
+```mermaid
+graph TD
+    User[User Browser] -->|HTTPS Requests| FE[Frontend Static Host]
+    FE -->|NDJSON Stream & REST APIs| ACA[Azure Container Apps Backend]
+    ACA -->|OIDC Token Session| Azure[Azure Cloud]
+    ACA -->|Cypher Queries| Neo4j[(Neo4j Aura DB)]
+    GHA[GitHub Actions] -->|1. Build & Push Image| GHCR[(GitHub Container Registry)]
+    GHA -->|2. Trigger Deploy Update| ACA
+    
+    classDef blue fill:#3b82f6,stroke:#1d4ed8,color:#fff;
+    classDef green fill:#10b981,stroke:#047857,color:#fff;
+    classDef gold fill:#f59e0b,stroke:#b45309,color:#fff;
+    class User,FE,GHA blue;
+    class GHCR,ACA green;
+    class Azure,Neo4j gold;
+```
+
+### Frontend-Backend Communication
+
+The connection between the frontend and backend is established through two communication channels:
+
+1.  **Standard REST APIs**: Lightweight transactional requests (fetching the dashboard list, retrieving graph details, deleting nodes, or exporting static HTML mindmaps).
+2.  **Real-Time NDJSON Progress Streams**: Long-running asynchronous agent processes (creating mindmaps, writing detailed concept guides, and drilling down into subgraphs). The FastAPI backend uses a `StreamingResponse` to push incremental progress tokens (`application/x-ndjson`). The frontend uses a `ReadableStream` reader and `TextDecoder` to parse these events in real time, rendering live status logs to the user.
+
+### Chosen Deployment Approach: Raw Docker & Serverless
+*   **Registry Hosting**: We utilize **GitHub Container Registry (GHCR)** (`ghcr.io`) to host versioned container images of the Python backend context.
+*   **OIDC Authentication**: GitHub Actions authenticate with Azure via **OpenID Connect (OIDC)** federated credentials. This passwordless login eliminates the security risk of storing long-lived subscription credentials in the repository.
+*   **Immutable Version Tracking**: Each image is built and tagged with the unique Git commit SHA (`${{ github.sha }}`) alongside `latest`. This ensures that every deployment is traceable, reproducible, and easily roll-backable in production.
+
+### Benefits of this Architecture
+
+*   **Zero Infrastructure Management**: Azure Container Apps runs on serverless Kubernetes (K8s) underneath, freeing developers from managing virtual machines, ingress controls, TLS certificates, or manual scaling policies.
+*   **Scale-to-Zero Cost Efficiency**: The container scales down to `0` active replicas when no requests are received for a specific time, costing nothing during idle periods. 
+*   **Automated DNS and TLS**: ACA automatically provides secure, publicly accessible HTTPS endpoints with managed SSL certificates out of the box.
+*   **Fast Cold Starts**: Leverages lightweight base images ensuring ACA instances spin up quickly (usually 20-30 seconds) during scale-from-zero requests.
+
+
