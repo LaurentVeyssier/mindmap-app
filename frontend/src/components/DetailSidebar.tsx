@@ -88,11 +88,24 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
   const [instructions, setInstructions] = useState("");
   const [width, setWidth] = useState(450);
   const [isDragging, setIsDragging] = useState(false);
+  const [isMobileScreen, setIsMobileScreen] = useState(window.innerWidth < 768);
 
-  // Snap back to original width (450px) when moving to another node
   useEffect(() => {
-    setWidth(450);
-  }, [node?.id]);
+    const handleResize = () => {
+      setIsMobileScreen(window.innerWidth < 768);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Snap back to original width (450px or full screen) when moving to another node
+  useEffect(() => {
+    if (isMobileScreen) {
+      setWidth(window.innerWidth);
+    } else {
+      setWidth(450);
+    }
+  }, [node?.id, isMobileScreen]);
 
   if (!node) return null;
 
@@ -133,27 +146,29 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
     <div 
       className="detail-sidebar drawer"
       style={{ 
-        width: `${width}px`,
+        width: isMobileScreen ? "100%" : `${width}px`,
         transition: isDragging ? "none" : "width 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
       }}
     >
       {/* Resize Handle */}
-      <div 
-        className="resize-handle" 
-        onMouseDown={handleMouseDown}
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: "6px",
-          cursor: "ew-resize",
-          zIndex: 101,
-          background: isDragging ? "rgba(245, 158, 11, 0.3)" : "transparent",
-          borderLeft: isDragging ? "1px solid var(--color-accent)" : "none",
-          transition: "background 0.2s"
-        }}
-      />
+      {!isMobileScreen && (
+        <div 
+          className="resize-handle" 
+          onMouseDown={handleMouseDown}
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: "6px",
+            cursor: "ew-resize",
+            zIndex: 101,
+            background: isDragging ? "rgba(245, 158, 11, 0.3)" : "transparent",
+            borderLeft: isDragging ? "1px solid var(--color-accent)" : "none",
+            transition: "background 0.2s"
+          }}
+        />
+      )}
 
       <div className="drawer-header">
         <div>
@@ -163,14 +178,16 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
           <h3>{node.label}</h3>
         </div>
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          <button 
-            onClick={toggleExpand} 
-            className="btn-expand" 
-            aria-label={width >= 800 ? "Collapse panel" : "Expand panel"}
-            title={width >= 800 ? "Collapse panel" : "Expand panel"}
-          >
-            {width >= 800 ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-          </button>
+          {!isMobileScreen && (
+            <button 
+              onClick={toggleExpand} 
+              className="btn-expand" 
+              aria-label={width >= 800 ? "Collapse panel" : "Expand panel"}
+              title={width >= 800 ? "Collapse panel" : "Expand panel"}
+            >
+              {width >= 800 ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+          )}
           <button onClick={onClose} className="btn-close" aria-label="Close panel">
             <X size={20} />
           </button>

@@ -524,11 +524,11 @@ export const App: React.FC = () => {
           <div style={{ display: "flex", gap: "10px" }}>
             <button onClick={handleExportHtml} className="btn-reset-header" style={{ display: "flex", alignItems: "center", gap: "6px", background: "rgba(59, 130, 246, 0.12)", border: "1px solid rgba(59, 130, 246, 0.25)", color: "#93c5fd" }}>
               <Download size={14} />
-              Export HTML
+              <span className="btn-text">Export HTML</span>
             </button>
             <button onClick={handleReset} className="btn-reset-header">
               <RotateCcw size={14} />
-              Remove Graph
+              <span className="btn-text">Remove Graph</span>
             </button>
           </div>
         )}
@@ -767,6 +767,7 @@ export const App: React.FC = () => {
                       nodes={nodes}
                       edges={edges}
                       centerNode={centerNode}
+                      selectedNodeId={selectedNode?.id || null}
                       onNodeClick={setSelectedNode}
                     />
                   )}

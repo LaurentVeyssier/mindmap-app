@@ -1118,3 +1118,129 @@ summary:hover {
   }
 }
 
+/* Responsive media queries */
+
+@media (max-width: 768px) {
+  /* Header styling and layout spacing */
+  .app-header {
+    padding: 10px 15px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  
+  .brand-section h1 {
+    font-size: 16px;
+  }
+  
+  /* Breadcrumbs bar - pushes to second line, scrollable horizontally */
+  .breadcrumbs-nav {
+    order: 3;
+    width: 100%;
+    padding: 4px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    margin-top: 2px;
+  }
+  
+  .breadcrumbs-list {
+    overflow-x: auto;
+    white-space: nowrap;
+    padding-bottom: 2px;
+    flex-wrap: nowrap;
+    scrollbar-width: none; /* Firefox */
+  }
+  
+  .breadcrumbs-list::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
+  }
+  
+  .breadcrumb-btn {
+    font-size: 13px;
+    padding: 2px 6px;
+  }
+
+  /* Main Workspace stack direction */
+  .app-main {
+    flex-direction: column;
+  }
+
+  /* Sidebar takes full width when visible */
+  .app-sidebar {
+    width: 100%;
+    padding: 20px 15px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-glass);
+    height: auto;
+    max-height: 80vh;
+  }
+
+  /* Hide empty canvas placeholder in create mode on mobile */
+  .app-sidebar + .app-content {
+    display: none;
+  }
+
+  /* Drawer takes full screen overlay on mobile */
+  .drawer {
+    width: 100% !important;
+    height: 100%;
+    border-left: none;
+    box-shadow: none;
+  }
+  
+  .drawer-header {
+    padding: 16px;
+  }
+  
+  .drawer-content {
+    padding: 16px;
+    gap: 16px;
+  }
+
+  /* Dashboard Adjustments */
+  .dashboard-container {
+    padding: 20px 12px;
+  }
+
+  .dashboard-hero {
+    padding: 32px 16px;
+    border-radius: 16px;
+    margin-bottom: 24px;
+  }
+
+  .dashboard-hero h2 {
+    font-size: 22px;
+  }
+
+  .dashboard-hero p {
+    font-size: 13px;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .mindmap-card {
+    height: auto;
+    min-height: 180px;
+  }
+
+  .backend-connecting-card {
+    padding: 24px 16px;
+    margin: 15px auto;
+    width: 95%;
+  }
+}
+
+@media (max-width: 600px) {
+  /* Header action buttons on small mobile */
+  .btn-reset-header .btn-text {
+    display: none;
+  }
+  
+  .btn-reset-header {
+    padding: 6px 8px;
+    border-radius: 6px;
+  }
+}
+
+
