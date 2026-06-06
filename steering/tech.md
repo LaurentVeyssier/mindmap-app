@@ -3,7 +3,7 @@
 ## Frontend Stack
 *   **Framework**: React (Vite + TypeScript)
 *   **Styling**: Vanilla CSS (No TailwindCSS, utilizing CSS Custom Properties for themes, transitions, and glassmorphism layouts)
-*   **Graph Library**: React Flow (with custom nodes, customized edges, and layout options)
+*   **Graph Library**: `react-force-graph-2d` (with custom canvas nodes, link styling, D3 forces, and dynamic mobile spacing)
 *   **State Management**: React Context / Hooks for state orchestration
 *   **Build Tool**: Vite
 

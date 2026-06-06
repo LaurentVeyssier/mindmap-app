@@ -28,7 +28,7 @@ mindmap-app/
 └── frontend/
     ├── src/
     │   ├── components/
-    │   │   ├── MindmapCanvas.tsx   # React Flow container
+    │   │   ├── MindmapCanvas.tsx   # D3 force-directed canvas graph container
     │   │   ├── DetailSidebar.tsx   # Sidebar for reading/generating content
     │   │   ├── TopicInput.tsx      # Panel to input target topics & guidelines
     │   │   └── Breadcrumbs.tsx     # Drill-down depth tracking and navigation

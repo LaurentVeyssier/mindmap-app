@@ -13,7 +13,7 @@ The diagram below outlines the end-to-end request flow. When a user submits a to
 ```mermaid
 graph TD
     %% User Actions
-    User[User Input] -->|1. Submit Topic / Drill Down| FE[Frontend React Flow UI]
+    User[User Input] -->|1. Submit Topic / Drill Down| FE[Frontend Force-Directed Canvas UI]
     
     %% API Streams
     FE -->|2. POST Request| API[FastAPI Endpoints]
@@ -74,9 +74,11 @@ az containerapp update `
 ```
 
 ### 4. Interactive Force Graph UI & Navigation
-*   **Breadcrumbs Nav**: Tracks zoom level and anchors navigation back to root or intermediate parent subgraphs.
+*   **Breadcrumbs Nav**: Tracks zoom level and anchors navigation back to root or intermediate parent subgraphs. On mobile, the breadcrumbs stack dynamically onto a separate row with swipeable horizontal scroll features.
 *   **Concentric Highlights**: Central hub lines are highlighted with golden glow links, while leaf lines use structural grey branches.
-*   **Details Sidebar**: Allows selecting any node (including the root topic node) to read, update, or write markdown articles.
+*   **Details Sidebar**: Allows selecting any node (including the root topic node) to read, update, or write markdown articles. On mobile, the sidebar drawer dynamically transitions to `100%` viewport width, disabling the desktop-specific resize handles and maximize options.
+*   **Auto-Centering Camera Panning**: Automatically centers the viewport on selected nodes with a custom offset that shifts the node into the visible area (left of the drawer panel) to prevent clipping.
+*   **Responsive Spacing & physics**: Adjusts repulsion forces, link lengths, and collision paddings dynamically on small viewports. Skips rendering link relationship text labels and wraps long node titles onto multiple lines to prevent overlap clutter.
 
 ### 5. Multi-Graph Isolated Dashboard
 *   Users can exit the active workspace to return to a visual homepage showing all saved mindmaps in a clean card layout.
@@ -98,7 +100,7 @@ az containerapp update `
 
 ### Frontend
 *   **React + TypeScript + Vite**: Responsive Single Page App.
-*   **React Flow**: Force graph canvas rendering.
+*   **react-force-graph-2d**: D3 force-directed physics engine canvas rendering.
 *   **Vanilla CSS**: Glassmorphic panels, glowing boundaries, and custom CSS custom properties (no Tailwind CSS).
 
 ---
