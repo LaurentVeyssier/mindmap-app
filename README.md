@@ -105,6 +105,7 @@ az containerapp update `
 *   **OAuth2 & JWT**: Implements the **OAuth2 standard password flow** with bearer token security. FastAPI's `OAuth2PasswordBearer` scheme extracts and validates JWT access tokens signed with a HS256 HMAC key, packing claim attributes (`sub`, `email`, and `is_admin`) to authorize scoped requests.
 *   **Bcrypt**: Uses native python `bcrypt` packaging for secure password hashing and verification.
 *   **uv**: Python packaging and environment manager.
+*   **Pydantic-Settings fallback**: Settings configuration class for the Mindmap App backend. The backend uses Pydantic Settings in `config.py` to manage configurations (environment variables fallback to .env file).
 
 ### Frontend
 *   **React + TypeScript + Vite**: Responsive Single Page App.
@@ -135,6 +136,16 @@ Ensure you have a running Neo4j Instance (Aura DB Free tier or local Desktop) an
    JWT_SECRET_KEY=<your-jwt-secret-signing-key>
    JWT_ALGORITHM=HS256
    ```
+   **JWT_SECRET_KEY** is a private cryptographic secret key used to sign and verify JSON Web Tokens (JWT). 
+      - When a user logs in, the server signs their user information (email, ID, is_admin) using this secret key to issue a token.
+      - For all subsequent requests, the server uses this key to check if the incoming token signature is valid. Without this key, anyone could forge a token and log in as any user.
+   
+   You can generate your own key from the terminal using Open SSL:
+      ```bash
+      echo "base64:$(openssl rand -base64 32)"
+      ```
+   Then copy paste the output into the JWT_SECRET_KEY field in the .env file.
+
 3. Sync python dependencies using `uv`:
    ```bash
    uv sync
@@ -177,7 +188,7 @@ The application uses a decoupled serverless hosting architecture, separating the
 *   **Environment Configuration**: The frontend points to the backend API via the `VITE_API_URL` environment variable during compile time.
 
 ### Backend Deployment (Azure Container Apps)
-The application's agent backend is continuously built and deployed to **Azure Container Apps (ACA)** using a serverless containerization flow managed by **GitHub Actions** ([deploy-backend.yml](file:///.github/workflows/deploy-backend.yml)).
+The application's agent backend is continuously built and deployed to **Azure Container Apps (ACA)** using a serverless containerization flow managed by **GitHub Actions** ([deploy-backend.yml](.github/workflows/deploy-backend.yml)).
 
 #### Deployment Architecture
 
@@ -206,7 +217,7 @@ The connection between the frontend and backend is established through two commu
 2.  **Real-Time NDJSON Progress Streams**: Long-running asynchronous agent processes (creating mindmaps, writing detailed concept guides, and drilling down into subgraphs). The FastAPI backend uses a `StreamingResponse` to push incremental progress tokens (`application/x-ndjson`). The frontend uses a `ReadableStream` reader and `TextDecoder` to parse these events in real time, rendering live status logs to the user.
 
 ### Chosen Deployment Approach: Raw Docker & Serverless
-*   **Registry Hosting**: We utilize **GitHub Container Registry (GHCR)** (`ghcr.io`) to host versioned container images of the Python backend context.
+*   **Registry Hosting**: I utilize **GitHub Container Registry (GHCR)** (`ghcr.io`) to host versioned container images of the Python backend context.
 *   **OIDC Authentication**: GitHub Actions authenticate with Azure via **OpenID Connect (OIDC)** federated credentials. This passwordless login eliminates the security risk of storing long-lived subscription credentials in the repository.
 *   **Immutable Version Tracking**: Each image is built and tagged with the unique Git commit SHA (`${{ github.sha }}`) alongside `latest`. This ensures that every deployment is traceable, reproducible, and easily roll-backable in production.
 
