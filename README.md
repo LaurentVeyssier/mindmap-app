@@ -81,7 +81,7 @@ az containerapp update `
 *   **Responsive Spacing & physics**: Adjusts repulsion forces, link lengths, and collision paddings dynamically on small viewports. Skips rendering link relationship text labels and wraps long node titles onto multiple lines to prevent overlap clutter.
 
 ### 5. Secure Session Isolation & User Authentication
-*   **Secure Authentication**: Secure login and registration utilizing native `bcrypt` password hashing and signed JSON Web Tokens (JWT).
+*   **Secure Authentication**: OAuth2-compliant authentication flow utilizing the **OAuth2 Resource Owner Password Credentials Grant** specification. Plain passwords are encrypted using native `bcrypt` hashing on registration and validated during authentication to issue cryptographically signed JSON Web Tokens (JWT).
 *   **Session-Based Data Scoping**: All topics, mindmap nodes, and relationship edges are scoped to the user who created them. Standard users can only view, generate, load, and manage their own mindmaps.
 *   **Auto-session Expiry**: Integrated standard JWT bearer token expiration with client-side automatic logout handling.
 
@@ -102,6 +102,8 @@ az containerapp update `
 *   **FastAPI**: API endpoints, CORS handling, and NDJSON streaming responses.
 *   **Neo4j**: Database driver storing nodes, edges, properties, and hierarchy metadata.
 *   **Google GenAI SDK**: Implements `google-genai` Client for structured schema outputs.
+*   **OAuth2 & JWT**: Implements the **OAuth2 standard password flow** with bearer token security. FastAPI's `OAuth2PasswordBearer` scheme extracts and validates JWT access tokens signed with a HS256 HMAC key, packing claim attributes (`sub`, `email`, and `is_admin`) to authorize scoped requests.
+*   **Bcrypt**: Uses native python `bcrypt` packaging for secure password hashing and verification.
 *   **uv**: Python packaging and environment manager.
 
 ### Frontend
@@ -128,7 +130,7 @@ Ensure you have a running Neo4j Instance (Aura DB Free tier or local Desktop) an
    NEO4J_PASSWORD=<your-password>
    NEO4J_DATABASE=neo4j
    GEMINI_API_KEY=<your-api-key>
-   PRIMARY_MODEL=gemini-2.5-flash
+   PRIMARY_MODEL=gemini-3.5-flash
    CRITIC_MODEL=gemini-3.5-flash
    JWT_SECRET_KEY=<your-jwt-secret-signing-key>
    JWT_ALGORITHM=HS256
