@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     neo4j_database: str = "neo4j"
     openai_api_key: Optional[str] = None
     gemini_api_key: Optional[str] = None
-    primary_model: str = "gemini-2.5-flash"
+    primary_model: str = "gemini-3.5-flash"
     critic_model: str = "gemini-3.5-flash"
     use_critic: bool = True
     max_sub_graph_level: int = 1
