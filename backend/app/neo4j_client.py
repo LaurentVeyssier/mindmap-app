@@ -35,6 +35,84 @@ class Neo4jClient:
             self.driver.close()
             logger.info("Neo4j driver connection closed.")
 
+    def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a user record by email.
+
+        Args:
+            email: User's email address.
+
+        Returns:
+            Optional[Dict[str, Any]]: The user record properties, or None.
+        """
+        query = "MATCH (u:User {email: $email}) RETURN u.id AS id, u.email AS email, u.hashed_password AS hashed_password, coalesce(u.is_admin, false) AS is_admin"
+        try:
+            result = self.driver.execute_query(
+                query,
+                email=email,
+                database_=self.database,
+                result_transformer_=lambda r: r.single()
+            )
+            return dict(result) if result else None
+        except Exception as err:
+            logger.error(f"[red]Error fetching user by email {email}[/red]: {err}")
+            return None
+
+    def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a user record by unique ID.
+
+        Args:
+            user_id: Unique User ID.
+
+        Returns:
+            Optional[Dict[str, Any]]: The user record properties, or None.
+        """
+        query = "MATCH (u:User {id: $id}) RETURN u.id AS id, u.email AS email, coalesce(u.is_admin, false) AS is_admin"
+        try:
+            result = self.driver.execute_query(
+                query,
+                id=user_id,
+                database_=self.database,
+                result_transformer_=lambda r: r.single()
+            )
+            return dict(result) if result else None
+        except Exception as err:
+            logger.error(f"[red]Error fetching user by ID {user_id}[/red]: {err}")
+            return None
+
+    def create_user(self, user_id: str, email: str, hashed_password: str, is_admin: bool = False) -> Dict[str, Any]:
+        """
+        Creates a new User node in the database.
+
+        Args:
+            user_id: Unique UUID.
+            email: User email address.
+            hashed_password: Encrypted password hash.
+            is_admin: Whether the user has admin role.
+
+        Returns:
+            Dict[str, Any]: Properties of the created user.
+        """
+        query = """
+        CREATE (u:User {id: $id, email: $email, hashed_password: $hashed_password, is_admin: $is_admin, created_at: datetime()})
+        RETURN u.id AS id, u.email AS email, u.is_admin AS is_admin
+        """
+        try:
+            result = self.driver.execute_query(
+                query,
+                id=user_id,
+                email=email,
+                hashed_password=hashed_password,
+                is_admin=is_admin,
+                database_=self.database,
+                result_transformer_=lambda r: r.single()
+            )
+            return dict(result)
+        except Exception as err:
+            logger.error(f"[red]Error creating user {email}[/red]: {err}")
+            raise
+
     def check_connection(self) -> bool:
         """
         Verifies the database connection health by executing a simple query.
@@ -66,31 +144,35 @@ class Neo4jClient:
             logger.error(f"[red]Error clearing database[/red]: {err}")
             raise
 
-    def delete_topic(self, topic_id: str) -> None:
+    def delete_topic(self, user_id: str, topic_id: str, is_admin: bool = False) -> None:
         """
-        Deletes a specific Topic and all its associated MindmapNodes and relationships.
+        Deletes a specific Topic and all its associated MindmapNodes and relationships, verifying ownership or admin status.
 
         Args:
+            user_id: The authenticated user ID.
             topic_id: The unique ID of the Topic to be deleted.
+            is_admin: Whether the current user is an admin.
         """
         query = """
-        MATCH (n)
-        WHERE (n:Topic AND n.id = $topic_id) OR (n:MindmapNode AND n.topic_id = $topic_id)
-        DETACH DELETE n
+        MATCH (t:Topic {id: $topic_id})
+        WHERE $is_admin = true OR (:User {id: $user_id})-[:OWNS_TOPIC]->(t)
+        OPTIONAL MATCH (n:MindmapNode {topic_id: $topic_id})
+        DETACH DELETE t, n
         """
         try:
-            self.driver.execute_query(query, topic_id=topic_id, database_=self.database)
-            logger.warning(f"Deleted topic {topic_id} and all its associated nodes.")
+            self.driver.execute_query(query, user_id=user_id, topic_id=topic_id, is_admin=is_admin, database_=self.database)
+            logger.warning(f"Deleted topic {topic_id} and all its associated nodes for user {user_id} (Admin: {is_admin}).")
         except Exception as err:
             logger.error(f"[red]Error deleting topic {topic_id}[/red]: {err}")
             raise
 
 
-    def save_topic(self, topic_id: str, title: str, description: str) -> TopicResponse:
+    def save_topic(self, user_id: str, topic_id: str, title: str, description: str) -> TopicResponse:
         """
-        Saves a new root Topic node.
+        Saves a new root Topic node and links it to the User.
         
         Args:
+            user_id: The authenticated user ID.
             topic_id: Unique identifier for the topic.
             title: Topic title.
             description: Overview description.
@@ -99,14 +181,17 @@ class Neo4jClient:
             TopicResponse: The saved topic data.
         """
         query = """
+        MATCH (u:User {id: $user_id})
         MERGE (t:Topic {id: $id})
         ON CREATE SET t.title = $title, t.description = $description, t.created_at = datetime()
         ON MATCH SET t.title = $title, t.description = $description
-        RETURN t.id AS id, t.title AS title, t.description AS description, t.content AS content
+        MERGE (u)-[:OWNS_TOPIC]->(t)
+        RETURN t.id AS id, t.title AS title, t.description AS description, t.content AS content, u.email AS owner_email
         """
         try:
             result = self.driver.execute_query(
                 query,
+                user_id=user_id,
                 id=topic_id,
                 title=title,
                 description=description,
@@ -117,27 +202,37 @@ class Neo4jClient:
                 id=result["id"],
                 title=result["title"],
                 description=result["description"],
-                content=result.get("content")
+                content=result.get("content"),
+                owner_email=result.get("owner_email")
             )
         except Exception as err:
             logger.error(f"[red]Error saving topic {title}[/red]: {err}")
             raise
 
-    def get_topic(self, topic_id: str) -> Optional[TopicResponse]:
+    def get_topic(self, user_id: str, topic_id: str, is_admin: bool = False) -> Optional[TopicResponse]:
         """
-        Retrieves a root Topic by ID.
+        Retrieves a root Topic by ID, verifying user ownership or admin status.
         
         Args:
+            user_id: The authenticated user ID.
             topic_id: Unique topic ID.
+            is_admin: Whether the current user is an admin.
             
         Returns:
             Optional[TopicResponse]: The topic details, or None if not found.
         """
-        query = "MATCH (t:Topic {id: $id}) RETURN t.id AS id, t.title AS title, t.description AS description, t.content AS content"
+        query = """
+        MATCH (t:Topic {id: $id})
+        WHERE $is_admin = true OR (:User {id: $user_id})-[:OWNS_TOPIC]->(t)
+        OPTIONAL MATCH (owner:User)-[:OWNS_TOPIC]->(t)
+        RETURN t.id AS id, t.title AS title, t.description AS description, t.content AS content, owner.email AS owner_email
+        """
         try:
             result = self.driver.execute_query(
                 query,
+                user_id=user_id,
                 id=topic_id,
+                is_admin=is_admin,
                 database_=self.database,
                 result_transformer_=lambda r: r.single()
             )
@@ -147,7 +242,8 @@ class Neo4jClient:
                 id=result["id"],
                 title=result["title"],
                 description=result["description"],
-                content=result.get("content")
+                content=result.get("content"),
+                owner_email=result.get("owner_email")
             )
         except Exception as err:
             logger.error(f"[red]Error getting topic {topic_id}[/red]: {err}")
@@ -156,20 +252,25 @@ class Neo4jClient:
 
     def save_graph(
         self,
+        user_id: str,
         topic_id: str,
         nodes: List[MindmapNodeSchema],
-        edges: List[MindmapEdgeSchema]
+        edges: List[MindmapEdgeSchema],
+        is_admin: bool = False
     ) -> None:
         """
-        Saves a batch of nodes and edges to Neo4j.
+        Saves a batch of nodes and edges to Neo4j, scoped by user_id or admin privileges.
         
         Args:
+            user_id: The authenticated user ID.
             topic_id: Root Topic ID.
             nodes: List of MindmapNodeSchema.
             edges: List of MindmapEdgeSchema.
+            is_admin: Whether the current user is an admin.
         """
         node_query = """
         MATCH (t:Topic {id: $topic_id})
+        WHERE $is_admin = true OR (:User {id: $user_id})-[:OWNS_TOPIC]->(t)
         MERGE (n:MindmapNode {id: $id})
         ON CREATE SET n.label = $label,
                       n.description = $description,
@@ -179,10 +280,10 @@ class Neo4jClient:
                       n.sub_graph_parent_id = $sub_graph_parent_id,
                       n.topic_id = $topic_id
         ON MATCH SET n.label = $label,
-                     n.description = $description,
-                     n.level = $level,
-                     n.parent_id = $parent_id,
-                     n.sub_graph_parent_id = $sub_graph_parent_id
+                      n.description = $description,
+                      n.level = $level,
+                      n.parent_id = $parent_id,
+                      n.sub_graph_parent_id = $sub_graph_parent_id
         MERGE (t)-[:HAS_NODE]->(n)
         """
         
@@ -198,6 +299,8 @@ class Neo4jClient:
                 self.driver.execute_query(
                     node_query,
                     topic_id=topic_id,
+                    user_id=user_id,
+                    is_admin=is_admin,
                     id=node.id,
                     label=node.label,
                     description=node.description,
@@ -252,16 +355,20 @@ class Neo4jClient:
 
     def get_nodes_and_edges(
         self,
+        user_id: str,
         topic_id: str,
-        parent_id: Optional[str] = None
+        parent_id: Optional[str] = None,
+        is_admin: bool = False
     ) -> Tuple[List[MindmapNodeSchema], List[MindmapEdgeSchema]]:
         """
-        Retrieves nodes and edges for a specific level of hierarchy in a Topic.
+        Retrieves nodes and edges for a specific level of hierarchy in a Topic, verifying user ownership or admin status.
         For a given parent_id (or None for root), retrieves nodes belonging to that level's view.
         
         Args:
+            user_id: The authenticated user ID.
             topic_id: Root topic ID.
             parent_id: The ID of the parent node to drill down into. If None, retrieves root level.
+            is_admin: Whether the current user is an admin.
             
         Returns:
             Tuple[List[MindmapNodeSchema], List[MindmapEdgeSchema]]: Extracted nodes and edges.
@@ -269,6 +376,8 @@ class Neo4jClient:
         # Retrieve all nodes that belong to the active level view, along with has_subgraph indicator
         if parent_id is None:
             node_query = """
+            MATCH (t:Topic {id: $topic_id})
+            WHERE $is_admin = true OR (:User {id: $user_id})-[:OWNS_TOPIC]->(t)
             MATCH (n:MindmapNode {topic_id: $topic_id})
             WHERE n.sub_graph_parent_id IS NULL
             OPTIONAL MATCH (child:MindmapNode {topic_id: $topic_id})
@@ -277,18 +386,22 @@ class Neo4jClient:
             """
         else:
             node_query = """
+            MATCH (t:Topic {id: $topic_id})
+            WHERE $is_admin = true OR (:User {id: $user_id})-[:OWNS_TOPIC]->(t)
             MATCH (n:MindmapNode {topic_id: $topic_id})
             WHERE n.sub_graph_parent_id = $parent_id
             OPTIONAL MATCH (child:MindmapNode {topic_id: $topic_id})
             WHERE child.sub_graph_parent_id = n.id
             RETURN n, count(child) > 0 AS has_subgraph
             """
-
+  
         try:
             records = self.driver.execute_query(
                 node_query,
+                user_id=user_id,
                 topic_id=topic_id,
                 parent_id=parent_id,
+                is_admin=is_admin,
                 database_=self.database,
                 routing_=RoutingControl.READ
             )
@@ -358,43 +471,51 @@ class Neo4jClient:
             logger.error(f"[red]Error retrieving graph for topic {topic_id} and parent {parent_id}[/red]: {err}")
             raise
 
-    def update_node_content(self, node_id: str, content: str) -> None:
+    def update_node_content(self, user_id: str, node_id: str, content: str, is_admin: bool = False) -> None:
         """
-        Updates the detailed markdown content of a specific node.
+        Updates the detailed markdown content of a specific node, verifying user ownership or admin status.
         
         Args:
+            user_id: The authenticated user ID.
             node_id: Node ID.
             content: The detailed markdown article generated.
+            is_admin: Whether the current user is an admin.
         """
         query = """
-        MATCH (n:MindmapNode {id: $id})
+        MATCH (t:Topic)-[:HAS_NODE]->(n:MindmapNode {id: $id})
+        WHERE $is_admin = true OR (:User {id: $user_id})-[:OWNS_TOPIC]->(t)
         SET n.content = $content
         RETURN n.id AS id
         """
         try:
             self.driver.execute_query(
                 query,
+                user_id=user_id,
                 id=node_id,
                 content=content,
+                is_admin=is_admin,
                 database_=self.database
             )
-            logger.info(f"Updated content for node {node_id}.")
+            logger.info(f"Updated content for node {node_id} for user {user_id} (Admin: {is_admin}).")
         except Exception as err:
             logger.error(f"[red]Error updating content for node {node_id}[/red]: {err}")
             raise
 
-    def get_node(self, node_id: str) -> Optional[MindmapNodeSchema]:
+    def get_node(self, user_id: str, node_id: str, is_admin: bool = False) -> Optional[MindmapNodeSchema]:
         """
-        Retrieves a single node by its ID.
+        Retrieves a single node by its ID, verifying user ownership or admin status.
         
         Args:
+            user_id: The authenticated user ID.
             node_id: Node ID.
+            is_admin: Whether the current user is an admin.
             
         Returns:
             Optional[MindmapNodeSchema]: The node schema, or None if not found.
         """
         query = """
-        MATCH (n:MindmapNode {id: $id})
+        MATCH (t:Topic)-[:HAS_NODE]->(n:MindmapNode {id: $id})
+        WHERE $is_admin = true OR (:User {id: $user_id})-[:OWNS_TOPIC]->(t)
         OPTIONAL MATCH (child:MindmapNode)
         WHERE child.sub_graph_parent_id = n.id
         RETURN n, count(child) > 0 AS has_subgraph
@@ -402,7 +523,9 @@ class Neo4jClient:
         try:
             result = self.driver.execute_query(
                 query,
+                user_id=user_id,
                 id=node_id,
+                is_admin=is_admin,
                 database_=self.database,
                 routing_=RoutingControl.READ,
                 result_transformer_=lambda r: r.single()
@@ -424,19 +547,22 @@ class Neo4jClient:
         except Exception as err:
             logger.error(f"[red]Error fetching node {node_id}[/red]: {err}")
             return None
-
-    def get_breadcrumbs(self, node_id: str) -> List[Dict[str, str]]:
+ 
+    def get_breadcrumbs(self, user_id: str, node_id: str, is_admin: bool = False) -> List[Dict[str, str]]:
         """
-        Traverses upward using SUB_GRAPH_OF relationships to build navigation path.
+        Traverses upward using SUB_GRAPH_OF relationships to build navigation path, verifying user ownership or admin status.
         
         Args:
+            user_id: The authenticated user ID.
             node_id: Node ID.
+            is_admin: Whether the current user is an admin.
             
         Returns:
             List[Dict[str, str]]: A list of breadcrumbs from root topic to the current node.
         """
         query = """
-        MATCH (n:MindmapNode {id: $id})
+        MATCH (t:Topic)-[:HAS_NODE]->(n:MindmapNode {id: $id})
+        WHERE $is_admin = true OR (:User {id: $user_id})-[:OWNS_TOPIC]->(t)
         OPTIONAL MATCH path = (n)-[:SUB_GRAPH_OF*]->(root:MindmapNode)
         WHERE root.parent_id IS NULL
         RETURN n, nodes(path) AS ancestors
@@ -444,7 +570,9 @@ class Neo4jClient:
         try:
             result = self.driver.execute_query(
                 query,
+                user_id=user_id,
                 id=node_id,
+                is_admin=is_admin,
                 database_=self.database,
                 routing_=RoutingControl.READ,
                 result_transformer_=lambda r: r.single()
@@ -478,17 +606,21 @@ class Neo4jClient:
         except Exception as err:
             logger.error(f"[red]Error fetching breadcrumbs for {node_id}[/red]: {err}")
             return []
-
+ 
     def get_other_nodes_in_graph(
         self,
+        user_id: str,
         topic_id: str,
-        parent_id: str
+        parent_id: str,
+        is_admin: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Retrieves all other nodes in the mindmap graph that are not the parent node itself
         and not descendants of the parent node. Used as negative space boundaries.
         """
         query = """
+        MATCH (t:Topic {id: $topic_id})
+        WHERE $is_admin = true OR (:User {id: $user_id})-[:OWNS_TOPIC]->(t)
         MATCH (n:MindmapNode {topic_id: $topic_id})
         WHERE NOT (n)-[:SUB_GRAPH_OF*0..]->(:MindmapNode {id: $parent_id})
         RETURN n.label AS label, n.description AS description, n.level AS level
@@ -496,8 +628,10 @@ class Neo4jClient:
         try:
             records = self.driver.execute_query(
                 query,
+                user_id=user_id,
                 topic_id=topic_id,
                 parent_id=parent_id,
+                is_admin=is_admin,
                 database_=self.database,
                 routing_=RoutingControl.READ
             )
@@ -508,22 +642,30 @@ class Neo4jClient:
         except Exception as err:
             logger.error(f"[red]Error fetching negative space boundaries[/red]: {err}")
             return []
-
-    def get_all_topics(self) -> List[TopicResponse]:
+ 
+    def get_all_topics(self, user_id: str, is_admin: bool = False) -> List[TopicResponse]:
         """
-        Retrieves all Topic nodes saved in Neo4j, sorted by creation time descending.
+        Retrieves all Topic nodes saved in Neo4j (all topics if admin, user's own if standard user).
         
+        Args:
+            user_id: The authenticated user ID.
+            is_admin: Whether the current user is an admin.
+            
         Returns:
             List[TopicResponse]: The list of topics.
         """
         query = """
         MATCH (t:Topic)
-        RETURN t.id AS id, t.title AS title, t.description AS description, t.content AS content
+        WHERE $is_admin = true OR (:User {id: $user_id})-[:OWNS_TOPIC]->(t)
+        OPTIONAL MATCH (owner:User)-[:OWNS_TOPIC]->(t)
+        RETURN t.id AS id, t.title AS title, t.description AS description, t.content AS content, owner.email AS owner_email
         ORDER BY t.created_at DESC
         """
         try:
             records = self.driver.execute_query(
                 query,
+                user_id=user_id,
+                is_admin=is_admin,
                 database_=self.database,
                 routing_=RoutingControl.READ,
                 result_transformer_=lambda r: [dict(record) for record in r]
@@ -533,45 +675,51 @@ class Neo4jClient:
                     id=record["id"],
                     title=record["title"],
                     description=record["description"],
-                    content=record.get("content")
+                    content=record.get("content"),
+                    owner_email=record.get("owner_email")
                 )
                 for record in records
             ]
         except Exception as err:
             logger.error(f"[red]Error fetching all topics[/red]: {err}")
             return []
-
-    def update_topic_content(self, topic_id: str, content: str) -> None:
+ 
+    def update_topic_content(self, user_id: str, topic_id: str, content: str, is_admin: bool = False) -> None:
         """
-        Updates the detailed markdown content of a root Topic node.
+        Updates the detailed markdown content of a root Topic node, verifying user ownership or admin status.
         
         Args:
+            user_id: The authenticated user ID.
             topic_id: Topic ID.
             content: The detailed markdown article generated.
+            is_admin: Whether the current user is an admin.
         """
         query = """
         MATCH (t:Topic {id: $id})
+        WHERE $is_admin = true OR (:User {id: $user_id})-[:OWNS_TOPIC]->(t)
         SET t.content = $content
         RETURN t.id AS id
         """
         try:
             self.driver.execute_query(
                 query,
+                user_id=user_id,
                 id=topic_id,
                 content=content,
+                is_admin=is_admin,
                 database_=self.database
             )
-            logger.info(f"Updated content for Topic {topic_id}.")
+            logger.info(f"Updated content for Topic {topic_id} for user {user_id} (Admin: {is_admin}).")
         except Exception as err:
             logger.error(f"[red]Error updating content for Topic {topic_id}[/red]: {err}")
             raise
 
-    def get_entire_graph(self, topic_id: str) -> Dict[str, Any]:
+    def get_entire_graph(self, user_id: str, topic_id: str, is_admin: bool = False) -> Dict[str, Any]:
         """
         Retrieves the complete tree (all levels, nodes, edges, content, and the root topic metadata)
-        for a given topic_id. Used for exporting/downloading.
+        for a given topic_id, verifying user ownership or admin status. Used for exporting/downloading.
         """
-        topic = self.get_topic(topic_id)
+        topic = self.get_topic(user_id, topic_id, is_admin)
         if not topic:
             return {}
             
@@ -633,12 +781,29 @@ class Neo4jClient:
         except Exception as err:
             logger.error(f"[red]Error retrieving entire graph for topic {topic_id}[/red]: {err}")
             raise
-
-    def get_generation_count(self, topic_id: str) -> int:
+ 
+    def get_generation_count(self, user_id: str, topic_id: str, is_admin: bool = False) -> int:
         """
         Returns the total number of generated sub-graphs and detailed descriptions
-        for a given topic_id to enforce usage limits.
+        for a given topic_id, verifying user ownership or admin status, to enforce usage limits.
         """
+        # Ensure user owns the topic (or is admin)
+        check_query = """
+        MATCH (t:Topic {id: $topic_id})
+        WHERE $is_admin = true OR (:User {id: $user_id})-[:OWNS_TOPIC]->(t)
+        RETURN count(t) AS count
+        """
+        check_res = self.driver.execute_query(
+            check_query,
+            user_id=user_id,
+            topic_id=topic_id,
+            is_admin=is_admin,
+            database_=self.database,
+            result_transformer_=lambda r: r.single()
+        )
+        if not check_res or check_res["count"] == 0:
+            return 999999 # refuse if not owned
+            
         # Count sub-graphs (nodes that have had subgraphs generated via drill down)
         subgraph_query = """
         MATCH (child:MindmapNode {topic_id: $topic_id})

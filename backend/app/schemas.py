@@ -14,6 +14,7 @@ class TopicResponse(BaseModel):
     title: str = Field(..., description="Title of the topic.")
     description: str = Field(..., description="Brief description of the topic.")
     content: Optional[str] = Field(None, description="Detailed markdown content generated for the topic.")
+    owner_email: Optional[str] = Field(None, description="Email of the user who owns this topic.")
 
 
 
@@ -90,3 +91,34 @@ class FullMindmapSchema(BaseModel):
     """Response structure for generating the entire 2-level mindmap at once."""
     description: str = Field(..., description="An overall description summarizing the topic.")
     concepts: List[MainConcept] = Field(..., description="A list of 5 to 8 main concept nodes detailing the topic.")
+
+
+class UserRegister(BaseModel):
+    """Payload to register a new user account."""
+    email: str = Field(..., description="Email address of the user.")
+    password: str = Field(..., description="Plain-text password.")
+
+
+class UserResponse(BaseModel):
+    """Response schema containing User details."""
+    id: str = Field(..., description="Unique user ID (UUID).")
+    email: str = Field(..., description="User email address.")
+
+
+class Token(BaseModel):
+    """Token response payload containing the signed JWT."""
+    access_token: str = Field(..., description="The encoded JWT string.")
+    token_type: str = Field("bearer", description="The token type prefix.")
+
+
+class TokenData(BaseModel):
+    """Payload representing decrypted token details."""
+    user_id: Optional[str] = None
+
+
+class CurrentUser(BaseModel):
+    """Context object for the currently authenticated user session."""
+    id: str = Field(..., description="Unique user ID (UUID).")
+    email: str = Field(..., description="User email address.")
+    is_admin: bool = Field(False, description="Whether the user is an administrator.")
+

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { Network, Sparkles, RotateCcw, Download, Server, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
+import { Network, Sparkles, RotateCcw, Download, Server, Loader2, AlertTriangle, RefreshCw, LogOut } from "lucide-react";
 import { TopicInput } from "./components/TopicInput";
 import { MindmapCanvas } from "./components/MindmapCanvas";
 import { DetailSidebar } from "./components/DetailSidebar";
 import { Breadcrumbs } from "./components/Breadcrumbs";
+import { Login } from "./components/Login";
 import { generateStandaloneHtml } from "./utils/exportTemplate";
 import "./App.css";
 
@@ -12,6 +13,7 @@ interface Topic {
   title: string;
   description: string;
   content: string | null;
+  owner_email?: string | null;
 }
 
 interface MindmapNode {
@@ -47,9 +49,30 @@ interface LoadingStep {
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 export const App: React.FC = () => {
+  const [token, setToken] = useState<string | null>(localStorage.getItem("token"));
+  const [userEmail, setUserEmail] = useState<string | null>(localStorage.getItem("userEmail"));
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [topic, setTopic] = useState<Topic | null>(null);
+
+  // Decode JWT to extract admin status when token changes
+  useEffect(() => {
+    if (token) {
+      try {
+        const base64Url = token.split(".")[1];
+        const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+        const payload = JSON.parse(window.atob(base64));
+        setIsAdmin(!!payload.is_admin);
+      } catch (e) {
+        console.error("Error decoding token:", e);
+        setIsAdmin(false);
+      }
+    } else {
+      setIsAdmin(false);
+    }
+  }, [token]);
+
   const [nodes, setNodes] = useState<MindmapNode[]>([]);
-  const [edges, setEdges] = useState<MindmapEdge[]>([]);
+  const [edges, setMindmapEdges] = useState<MindmapEdge[]>([]); // named differently to avoid collision with setter
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
   const [selectedNode, setSelectedNode] = useState<{
     id: string;
@@ -74,6 +97,46 @@ export const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<"dashboard" | "create">("dashboard");
   const [backendStatus, setBackendStatus] = useState<"checking" | "waking_up" | "connected" | "failed">("checking");
   const [connectionAttempts, setConnectionAttempts] = useState(0);
+
+  // setEdges wrapper to match previous code
+  const setEdges = (newEdges: MindmapEdge[]) => {
+    setMindmapEdges(newEdges);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("userEmail");
+    setToken(null);
+    setUserEmail(null);
+    setIsAdmin(false);
+    setTopic(null);
+    setNodes([]);
+    setEdges([]);
+    setBreadcrumbs([]);
+    setSelectedNode(null);
+    setCurrentParentNode(null);
+  };
+
+  const handleLoginSuccess = (newToken: string, email: string) => {
+    localStorage.setItem("token", newToken);
+    localStorage.setItem("userEmail", email);
+    setToken(newToken);
+    setUserEmail(email);
+  };
+
+  // Custom fetch wrapper to inject Bearer token and handle 401 Unauthorized
+  const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
+    const headers = {
+      ...options.headers,
+      "Authorization": `Bearer ${token}`
+    };
+    const response = await fetch(url, { ...options, headers });
+    if (response.status === 401) {
+      handleLogout();
+      throw new Error("Session expired. Please log in again.");
+    }
+    return response;
+  };
 
   // Loading states
   const [isLoading, setIsLoading] = useState(false);
@@ -137,9 +200,10 @@ export const App: React.FC = () => {
 
   // Fetch available topics in database
   const fetchMindmaps = async () => {
+    if (!token) return;
     try {
       setConnectionAttempts((prev) => prev + 1);
-      const response = await fetch(`${API_BASE_URL}/api/mindmaps`);
+      const response = await fetchWithAuth(`${API_BASE_URL}/api/mindmaps`);
       if (response.ok) {
         const data = await response.json();
         setMindmaps(data);
@@ -156,28 +220,28 @@ export const App: React.FC = () => {
 
   // Refetch list when returning to dashboard
   useEffect(() => {
-    if (topic === null) {
+    if (token && topic === null) {
       fetchMindmaps();
       setViewMode("dashboard");
     }
-  }, [topic]);
+  }, [topic, token]);
 
   // Poll backend list when it's waking up
   useEffect(() => {
-    if (backendStatus === "waking_up") {
+    if (token && backendStatus === "waking_up") {
       const timer = setTimeout(() => {
         fetchMindmaps();
       }, 5000);
       return () => clearTimeout(timer);
     }
-  }, [backendStatus, connectionAttempts]);
+  }, [backendStatus, connectionAttempts, token]);
 
   // Load an existing topic workspace
   const handleLoadMindmap = async (loadedTopic: Topic) => {
     setIsLoading(true);
     setStatusMessage(`Loading workspace '${loadedTopic.title}'...`);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/mindmap/${loadedTopic.id}/graph`);
+      const response = await fetchWithAuth(`${API_BASE_URL}/api/mindmap/${loadedTopic.id}/graph`);
       if (!response.ok) {
         throw new Error("Failed to load mindmap graph.");
       }
@@ -208,7 +272,7 @@ export const App: React.FC = () => {
     ]);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/mindmap/create`, {
+      const response = await fetchWithAuth(`${API_BASE_URL}/api/mindmap/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic: topicTitle, guidelines }),
@@ -266,7 +330,7 @@ export const App: React.FC = () => {
     ]);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/mindmap/node/${nodeId}/generate-content`, {
+      const response = await fetchWithAuth(`${API_BASE_URL}/api/mindmap/node/${nodeId}/generate-content`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instructions }),
@@ -338,7 +402,7 @@ export const App: React.FC = () => {
     ]);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/mindmap/node/${nodeId}/drill-down`, {
+      const response = await fetchWithAuth(`${API_BASE_URL}/api/mindmap/node/${nodeId}/drill-down`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -365,7 +429,7 @@ export const App: React.FC = () => {
 
       if (completedData) {
         // Fetch breadcrumbs for the new level
-        const breadcrumbRes = await fetch(`${API_BASE_URL}/api/mindmap/node/${nodeId}/breadcrumbs`);
+        const breadcrumbRes = await fetchWithAuth(`${API_BASE_URL}/api/mindmap/node/${nodeId}/breadcrumbs`);
         const breadcrumbData = await breadcrumbRes.json();
 
         setNodes(completedData.nodes);
@@ -409,7 +473,7 @@ export const App: React.FC = () => {
     }
 
     try {
-      const response = await fetch(url);
+      const response = await fetchWithAuth(url);
       if (!response.ok) {
         throw new Error("Failed to fetch graph level.");
       }
@@ -423,13 +487,13 @@ export const App: React.FC = () => {
         setCurrentParentNode(null);
       } else {
         // Fetch current active node details for center title
-        const nodeDetailRes = await fetch(`${API_BASE_URL}/api/mindmap/node/${levelId}/breadcrumbs`);
+        const nodeDetailRes = await fetchWithAuth(`${API_BASE_URL}/api/mindmap/node/${levelId}/breadcrumbs`);
         const breadcrumbData = await nodeDetailRes.json();
         setBreadcrumbs(breadcrumbData.breadcrumbs);
 
         // Fetch parent details from database
         try {
-          const parentRes = await fetch(`${API_BASE_URL}/api/mindmap/node/${levelId}`);
+          const parentRes = await fetchWithAuth(`${API_BASE_URL}/api/mindmap/node/${levelId}`);
           if (parentRes.ok) {
             const parentData = await parentRes.json();
             setCurrentParentNode(parentData);
@@ -453,7 +517,7 @@ export const App: React.FC = () => {
       return;
     }
     try {
-      const response = await fetch(`${API_BASE_URL}/api/mindmap/${topic.id}`, {
+      const response = await fetchWithAuth(`${API_BASE_URL}/api/mindmap/${topic.id}`, {
         method: "DELETE",
       });
       if (!response.ok) {
@@ -479,7 +543,7 @@ export const App: React.FC = () => {
     setIsLoading(true);
     setStatusMessage("Exporting interactive mindmap...");
     try {
-      const response = await fetch(`${API_BASE_URL}/api/mindmap/${topic.id}/export`);
+      const response = await fetchWithAuth(`${API_BASE_URL}/api/mindmap/${topic.id}/export`);
       if (!response.ok) {
         throw new Error("Failed to export mindmap graph data.");
       }
@@ -504,6 +568,10 @@ export const App: React.FC = () => {
     }
   };
 
+  if (!token) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
     <div className="app-container">
       <header className="app-header">
@@ -520,18 +588,29 @@ export const App: React.FC = () => {
           />
         )}
 
-        {topic && (
-          <div style={{ display: "flex", gap: "10px" }}>
-            <button onClick={handleExportHtml} className="btn-reset-header" style={{ display: "flex", alignItems: "center", gap: "6px", background: "rgba(59, 130, 246, 0.12)", border: "1px solid rgba(59, 130, 246, 0.25)", color: "#93c5fd" }}>
-              <Download size={14} />
-              <span className="btn-text">Export HTML</span>
-            </button>
-            <button onClick={handleReset} className="btn-reset-header">
-              <RotateCcw size={14} />
-              <span className="btn-text">Remove Graph</span>
+        <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
+          {topic && (
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button onClick={handleExportHtml} className="btn-reset-header" style={{ display: "flex", alignItems: "center", gap: "6px", background: "rgba(59, 130, 246, 0.12)", border: "1px solid rgba(59, 130, 246, 0.25)", color: "#93c5fd" }}>
+                <Download size={14} />
+                <span className="btn-text">Export HTML</span>
+              </button>
+              <button onClick={handleReset} className="btn-reset-header">
+                <RotateCcw size={14} />
+                <span className="btn-text">Remove Graph</span>
+              </button>
+            </div>
+          )}
+          
+          <div className="user-profile-section">
+            {isAdmin && <span className="admin-badge">ADMIN</span>}
+            {userEmail && <span className="user-email-badge">{userEmail}</span>}
+            <button onClick={handleLogout} className="btn-logout" title="Log Out">
+              <LogOut size={14} />
+              <span className="btn-text">Log Out</span>
             </button>
           </div>
-        )}
+        </div>
       </header>
 
       <main className="app-main">
@@ -679,7 +758,14 @@ export const App: React.FC = () => {
                     {mindmaps.map((m) => (
                       <div key={m.id} className="mindmap-card card" onClick={() => handleLoadMindmap(m)}>
                         <div className="card-body">
-                          <h3>{m.title}</h3>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", width: "100%", overflow: "hidden" }}>
+                            <h3>{m.title}</h3>
+                            {m.owner_email && m.owner_email !== userEmail && (
+                              <span className="card-owner-badge" title={`Owner: ${m.owner_email}`}>
+                                {m.owner_email}
+                              </span>
+                            )}
+                          </div>
                           <p>{m.description || "No description provided."}</p>
                         </div>
                         <div className="card-actions">

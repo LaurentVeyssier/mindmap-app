@@ -11,6 +11,9 @@ from app.config import settings
 from app.logger import logger
 from app.neo4j_client import neo4j_client
 from app.agents import agents
+from fastapi import Depends, status
+from fastapi.security import OAuth2PasswordRequestForm
+from app.auth import get_current_user, verify_password, get_password_hash, create_access_token
 from app.schemas import (
     TopicCreate,
     TopicResponse,
@@ -18,7 +21,11 @@ from app.schemas import (
     NodeCreateContent,
     DrillDownRequest,
     MindmapNodeSchema,
-    MindmapEdgeSchema
+    MindmapEdgeSchema,
+    UserRegister,
+    UserResponse,
+    Token,
+    CurrentUser
 )
 
 
@@ -83,20 +90,78 @@ def import_api_key_check() -> bool:
     return bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
 
 
-@app.get("/api/mindmaps", response_model=List[TopicResponse])
-def list_mindmaps() -> List[TopicResponse]:
+@app.post("/api/auth/register", response_model=UserResponse)
+def register_user(payload: UserRegister) -> UserResponse:
     """
-    Retrieves all created mindmaps (topics) from the Neo4j database.
+    Registers a new user account.
+    """
+    # Check if user already exists
+    existing_user = neo4j_client.get_user_by_email(payload.email)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email address already registered."
+        )
+    
+    user_id = str(uuid.uuid4())
+    hashed_password = get_password_hash(payload.password)
+    
+    try:
+        user_record = neo4j_client.create_user(user_id, payload.email, hashed_password)
+        return UserResponse(
+            id=user_record["id"],
+            email=user_record["email"]
+        )
+    except Exception as err:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error registering user: {err}"
+        )
+
+
+@app.post("/api/auth/token", response_model=Token)
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()) -> Token:
+    """
+    OAuth2 standard password login endpoint. Verifies email/password and returns a JWT.
+    """
+    user_record = neo4j_client.get_user_by_email(form_data.username) # Form username contains email
+    if not user_record or not verify_password(form_data.password, user_record["hashed_password"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token = create_access_token(
+        data={
+            "sub": user_record["id"],
+            "email": user_record["email"],
+            "is_admin": user_record.get("is_admin", False)
+        }
+    )
+    return Token(
+        access_token=access_token,
+        token_type="bearer"
+    )
+
+
+@app.get("/api/mindmaps", response_model=List[TopicResponse])
+def list_mindmaps(current_user: CurrentUser = Depends(get_current_user)) -> List[TopicResponse]:
+    """
+    Retrieves all created mindmaps (topics) from the Neo4j database for the authenticated user.
     """
     try:
-        return neo4j_client.get_all_topics()
+        return neo4j_client.get_all_topics(current_user.id, current_user.is_admin)
     except Exception as err:
         logger.error(f"[red]Failed to fetch mindmaps[/red]: {err}")
         raise HTTPException(status_code=500, detail=str(err))
 
 
 @app.post("/api/mindmap/create")
-def create_mindmap(payload: TopicCreate) -> StreamingResponse:
+def create_mindmap(
+    payload: TopicCreate,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> StreamingResponse:
     """
     Creates a new Topic and generates a 2-level hierarchical mindmap.
     Streams progress updates, finalizing with the GraphResponse payload.
@@ -133,6 +198,7 @@ def create_mindmap(payload: TopicCreate) -> StreamingResponse:
         try:
             # 2. Save root Topic metadata
             topic_node = neo4j_client.save_topic(
+                user_id=current_user.id,
                 topic_id=topic_id,
                 title=payload.topic,
                 description=finalized_decomposition.description
@@ -199,9 +265,11 @@ def create_mindmap(payload: TopicCreate) -> StreamingResponse:
                     
             # 4. Save the full 2-level graph to Neo4j database
             neo4j_client.save_graph(
+                user_id=current_user.id,
                 topic_id=topic_id,
                 nodes=nodes_list,
-                edges=edges_list
+                edges=edges_list,
+                is_admin=current_user.is_admin
             )
             yield json.dumps({"step": "db", "status": "done", "message": "Neo4j Database: Graph saved successfully."}) + "\n"
         except Exception as err:
@@ -222,18 +290,19 @@ def create_mindmap(payload: TopicCreate) -> StreamingResponse:
 @app.get("/api/mindmap/{topic_id}/graph", response_model=GraphResponse)
 def get_mindmap_graph(
     topic_id: str,
-    parent_id: Optional[str] = Query(None, description="Filter for a sub-graph level")
+    parent_id: Optional[str] = Query(None, description="Filter for a sub-graph level"),
+    current_user: CurrentUser = Depends(get_current_user)
 ) -> GraphResponse:
     """
-    Fetches the nodes and edges for a specific level of hierarchy in a Topic.
+    Fetches the nodes and edges for a specific level of hierarchy in a Topic, verifying ownership or admin status.
     
     If parent_id is omitted, returns the root/macro level nodes (level 0).
     """
-    topic_node = neo4j_client.get_topic(topic_id)
+    topic_node = neo4j_client.get_topic(current_user.id, topic_id, current_user.is_admin)
     if not topic_node:
         raise HTTPException(status_code=404, detail="Topic not found")
         
-    nodes, edges = neo4j_client.get_nodes_and_edges(topic_id, parent_id)
+    nodes, edges = neo4j_client.get_nodes_and_edges(current_user.id, topic_id, parent_id, current_user.is_admin)
     return GraphResponse(
         topic=topic_node,
         nodes=nodes,
@@ -242,16 +311,20 @@ def get_mindmap_graph(
 
 
 @app.post("/api/mindmap/node/{node_id}/drill-down")
-def drill_down_node(node_id: str, payload: DrillDownRequest) -> Response:
+def drill_down_node(
+    node_id: str,
+    payload: DrillDownRequest,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Response:
     """
-    Generates a sub-graph for a specific parent node.
+    Generates a sub-graph for a specific parent node, verifying ownership or admin status.
     Streams progress updates, finalizing with the GraphResponse payload.
     """
-    parent_node = neo4j_client.get_node(node_id)
+    parent_node = neo4j_client.get_node(current_user.id, node_id, current_user.is_admin)
     if not parent_node:
         raise HTTPException(status_code=404, detail="Parent node not found")
         
-    topic_node = neo4j_client.get_topic(parent_node.topic_id)
+    topic_node = neo4j_client.get_topic(current_user.id, parent_node.topic_id, current_user.is_admin)
     if not topic_node:
         raise HTTPException(status_code=404, detail="Topic not found")
 
@@ -265,13 +338,15 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> Response:
 
     # Check if sub-graph already exists in database to prevent regeneration and keep level unchanged
     existing_nodes, existing_edges = neo4j_client.get_nodes_and_edges(
+        user_id=current_user.id,
         topic_id=parent_node.topic_id,
-        parent_id=parent_node.id
+        parent_id=parent_node.id,
+        is_admin=current_user.is_admin
     )
 
     # Limit total generations (sub-graphs + descriptions count)
     if not existing_nodes:
-        total_generations = neo4j_client.get_generation_count(parent_node.topic_id)
+        total_generations = neo4j_client.get_generation_count(current_user.id, parent_node.topic_id, current_user.is_admin)
         if total_generations >= settings.max_generations:
             return Response(
                 content=f"Usage limit: Maximum of {settings.max_generations} generations (subgraphs/articles) reached for this workspace.",
@@ -299,10 +374,12 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> Response:
             yield json.dumps({"step": "critic", "status": "disabled", "message": "Critic Agent: Disabled in settings"}) + "\n"
         yield json.dumps({"step": "planner", "status": "active", "message": f"Planner Agent: Decomposing sub-topic '{parent_node.label}' with master graph boundaries..."}) + "\n"
         try:
-            lineage = [{"id": topic_node.id, "label": topic_node.title}] + neo4j_client.get_breadcrumbs(parent_node.id)
+            lineage = [{"id": topic_node.id, "label": topic_node.title}] + neo4j_client.get_breadcrumbs(current_user.id, parent_node.id, current_user.is_admin)
             other_nodes = neo4j_client.get_other_nodes_in_graph(
+                user_id=current_user.id,
                 topic_id=parent_node.topic_id,
-                parent_id=parent_node.id
+                parent_id=parent_node.id,
+                is_admin=current_user.is_admin
             )
             decomposition = agents.plan_subgraph_draft(
                 topic=topic_node.title,
@@ -403,9 +480,11 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> Response:
      
             # 3. Persist sub-graph to database
             neo4j_client.save_graph(
+                user_id=current_user.id,
                 topic_id=parent_node.topic_id,
                 nodes=sub_nodes_list,
-                edges=sub_edges_list
+                edges=sub_edges_list,
+                is_admin=current_user.is_admin
             )
             yield json.dumps({"step": "db", "status": "done", "message": "Neo4j Database: Sub-graph saved successfully."}) + "\n"
         except Exception as err:
@@ -424,12 +503,16 @@ def drill_down_node(node_id: str, payload: DrillDownRequest) -> Response:
 
 
 @app.post("/api/mindmap/node/{node_id}/generate-content")
-def generate_node_content(node_id: str, payload: NodeCreateContent) -> Response:
+def generate_node_content(
+    node_id: str,
+    payload: NodeCreateContent,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Response:
     """
-    Generates a detailed markdown article/content for a specific concept node or root Topic node.
+    Generates a detailed markdown article/content for a specific concept node or root Topic node, verifying ownership or admin status.
     Streams progress updates, finalizing with the content payload.
     """
-    node = neo4j_client.get_node(node_id)
+    node = neo4j_client.get_node(current_user.id, node_id, current_user.is_admin)
     topic_id = None
     has_existing_content = False
 
@@ -437,7 +520,7 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Response:
         topic_id = node.topic_id
         has_existing_content = node.content is not None
     else:
-        topic = neo4j_client.get_topic(node_id)
+        topic = neo4j_client.get_topic(current_user.id, node_id, current_user.is_admin)
         if not topic:
             raise HTTPException(status_code=404, detail="Node or Topic not found")
         topic_id = topic.id
@@ -445,7 +528,7 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Response:
 
     # Check generation limit if it's a new generation (node has no content yet)
     if not has_existing_content:
-        total_generations = neo4j_client.get_generation_count(topic_id)
+        total_generations = neo4j_client.get_generation_count(current_user.id, topic_id, current_user.is_admin)
         if total_generations >= settings.max_generations:
             return Response(
                 content=f"Usage limit: Maximum of {settings.max_generations} generations (subgraphs/articles) reached for this workspace.",
@@ -455,14 +538,14 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Response:
 
     def event_generator():
         if node:
-            topic = neo4j_client.get_topic(node.topic_id)
-            if not topic:
+            topic_obj = neo4j_client.get_topic(current_user.id, node.topic_id, current_user.is_admin)
+            if not topic_obj:
                 yield json.dumps({"status": "error", "message": "Topic not found"}) + "\n"
                 return
                 
             parent_label: Optional[str] = None
             if node.parent_id:
-                parent_node = neo4j_client.get_node(node.parent_id)
+                parent_node = neo4j_client.get_node(current_user.id, node.parent_id, current_user.is_admin)
                 if parent_node:
                     parent_label = parent_node.label
                     
@@ -474,7 +557,7 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Response:
                 content = agents.generate_node_content_draft(
                     node_label=node.label,
                     node_description=node.description,
-                    topic_title=topic.title,
+                    topic_title=topic_obj.title,
                     parent_label=parent_label,
                     user_guidelines=payload.instructions
                 )
@@ -493,7 +576,7 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Response:
                     content = agents.criticize_content(
                         node_label=node.label,
                         node_description=node.description,
-                        topic_title=topic.title,
+                        topic_title=topic_obj.title,
                         parent_label=parent_label,
                         user_guidelines=payload.instructions,
                         draft_content=content
@@ -505,7 +588,7 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Response:
             # 3. DB Sync
             yield json.dumps({"step": "db", "status": "active", "message": "Neo4j Database: Saving article content..."}) + "\n"
             try:
-                neo4j_client.update_node_content(node_id, content)
+                neo4j_client.update_node_content(current_user.id, node_id, content, current_user.is_admin)
                 yield json.dumps({"step": "db", "status": "done", "message": "Neo4j Database: Article saved successfully."}) + "\n"
             except Exception as err:
                 yield json.dumps({"step": "db", "status": "failed", "message": f"Neo4j Database failed: {err}"}) + "\n"
@@ -515,20 +598,20 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Response:
             yield json.dumps({"status": "completed", "data": {"content": content}}) + "\n"
         else:
             # Fallback to root Topic
-            topic = neo4j_client.get_topic(node_id)
-            if not topic:
+            topic_obj = neo4j_client.get_topic(current_user.id, node_id, current_user.is_admin)
+            if not topic_obj:
                 yield json.dumps({"status": "error", "message": "Node or Topic not found"}) + "\n"
                 return
                 
             # 1. Draft content
             if not settings.use_critic:
                 yield json.dumps({"step": "critic", "status": "disabled", "message": "Critic Agent: Disabled in settings"}) + "\n"
-            yield json.dumps({"step": "writer", "status": "active", "message": f"Content Writer: Drafting topic overview guide for '{topic.title}'..."}) + "\n"
+            yield json.dumps({"step": "writer", "status": "active", "message": f"Content Writer: Drafting topic overview guide for '{topic_obj.title}'..."}) + "\n"
             try:
                 content = agents.generate_node_content_draft(
-                    node_label=topic.title,
-                    node_description=topic.description,
-                    topic_title=topic.title,
+                    node_label=topic_obj.title,
+                    node_description=topic_obj.description,
+                    topic_title=topic_obj.title,
                     parent_label=None,
                     user_guidelines=payload.instructions
                 )
@@ -545,9 +628,9 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Response:
                 yield json.dumps({"step": "critic", "status": "active", "message": f"Critic Agent: Polishing and refining topic guide..."}) + "\n"
                 try:
                     content = agents.criticize_content(
-                        node_label=topic.title,
-                        node_description=topic.description,
-                        topic_title=topic.title,
+                        node_label=topic_obj.title,
+                        node_description=topic_obj.description,
+                        topic_title=topic_obj.title,
                         parent_label=None,
                         user_guidelines=payload.instructions,
                         draft_content=content
@@ -559,7 +642,7 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Response:
             # 3. DB Sync
             yield json.dumps({"step": "db", "status": "active", "message": "Neo4j Database: Saving topic overview guide..."}) + "\n"
             try:
-                neo4j_client.update_topic_content(node_id, content)
+                neo4j_client.update_topic_content(current_user.id, node_id, content, current_user.is_admin)
                 yield json.dumps({"step": "db", "status": "done", "message": "Neo4j Database: Topic guide saved successfully."}) + "\n"
             except Exception as err:
                 yield json.dumps({"step": "db", "status": "failed", "message": f"Neo4j Database failed: {err}"}) + "\n"
@@ -572,11 +655,14 @@ def generate_node_content(node_id: str, payload: NodeCreateContent) -> Response:
 
 
 @app.get("/api/mindmap/node/{node_id}", response_model=MindmapNodeSchema)
-def get_node_details(node_id: str) -> MindmapNodeSchema:
+def get_node_details(
+    node_id: str,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> MindmapNodeSchema:
     """
-    Retrieves the properties (label, description, content, level, parent_id) for a single node.
+    Retrieves the properties (label, description, content, level, parent_id) for a single node, verifying ownership or admin status.
     """
-    node = neo4j_client.get_node(node_id)
+    node = neo4j_client.get_node(current_user.id, node_id, current_user.is_admin)
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
     return node
@@ -584,40 +670,49 @@ def get_node_details(node_id: str) -> MindmapNodeSchema:
 
 
 @app.get("/api/mindmap/node/{node_id}/breadcrumbs")
-def get_breadcrumbs(node_id: str) -> Dict[str, List[Dict[str, str]]]:
+def get_breadcrumbs(
+    node_id: str,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, List[Dict[str, str]]]:
     """
     Gets breadcrumbs navigation path from the root topic down to the specified node.
     """
-    node = neo4j_client.get_node(node_id)
+    node = neo4j_client.get_node(current_user.id, node_id, current_user.is_admin)
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
         
-    breadcrumbs = neo4j_client.get_breadcrumbs(node_id)
+    breadcrumbs = neo4j_client.get_breadcrumbs(current_user.id, node_id, current_user.is_admin)
     return {"breadcrumbs": breadcrumbs}
 
 
 @app.get("/api/mindmap/{topic_id}/export")
-def export_mindmap(topic_id: str) -> Dict[str, Any]:
+def export_mindmap(
+    topic_id: str,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Fetches the entire graph (all nodes, edges, content, and root Topic metadata)
     for a given topic_id, serialized in a single payload.
     """
-    data = neo4j_client.get_entire_graph(topic_id)
+    data = neo4j_client.get_entire_graph(current_user.id, topic_id, current_user.is_admin)
     if not data:
         raise HTTPException(status_code=404, detail="Topic not found")
     return data
 
 
 @app.delete("/api/mindmap/{topic_id}")
-def delete_mindmap(topic_id: str) -> Dict[str, str]:
+def delete_mindmap(
+    topic_id: str,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, str]:
     """
-    Deletes a specific topic and all its nodes/relationships from the Neo4j database.
+    Deletes a specific topic and all its nodes/relationships from the Neo4j database, verifying ownership or admin status.
     """
     try:
-        topic = neo4j_client.get_topic(topic_id)
+        topic = neo4j_client.get_topic(current_user.id, topic_id, current_user.is_admin)
         if not topic:
             raise HTTPException(status_code=404, detail="Topic not found")
-        neo4j_client.delete_topic(topic_id)
+        neo4j_client.delete_topic(current_user.id, topic_id, current_user.is_admin)
         return {"status": "deleted", "topic_id": topic_id}
     except HTTPException:
         raise
@@ -626,10 +721,24 @@ def delete_mindmap(topic_id: str) -> Dict[str, str]:
 
 
 @app.delete("/api/mindmap/clear")
-def clear_database() -> Dict[str, str]:
-    """Wipes all graphs and nodes from Neo4j database."""
+def clear_database(current_user: CurrentUser = Depends(get_current_user)) -> Dict[str, str]:
+    """Wipes all graphs and nodes belonging to the authenticated user (or all graphs if admin)."""
+    if current_user.is_admin:
+        query = """
+        MATCH (t:Topic)
+        OPTIONAL MATCH (n:MindmapNode {topic_id: t.id})
+        DETACH DELETE t, n
+        """
+        params = {}
+    else:
+        query = """
+        MATCH (u:User {id: $user_id})-[:OWNS_TOPIC]->(t:Topic)
+        OPTIONAL MATCH (n:MindmapNode {topic_id: t.id})
+        DETACH DELETE t, n
+        """
+        params = {"user_id": current_user.id}
     try:
-        neo4j_client.clear_db()
+        neo4j_client.driver.execute_query(query, database_=neo4j_client.database, **params)
         return {"status": "cleared"}
     except Exception as err:
         raise HTTPException(status_code=500, detail=str(err))

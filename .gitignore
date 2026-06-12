@@ -30,3 +30,7 @@ Thumbs.db
 
 # Project instructions
 HOW_TO.txt
+
+# Database setup scripts
+backend/migration.py
+backend/set_admin.py

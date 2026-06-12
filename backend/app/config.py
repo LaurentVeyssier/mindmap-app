@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     max_generations: int = 5
     port: int = 8000
     host: str = "127.0.0.1"
+    jwt_secret_key: str = "SUPER_SECRET_KEY_FOR_LOCAL_DEV_CHANGE_IN_PROD"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 10080  # 7 days in minutes
 
 
 

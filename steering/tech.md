@@ -15,6 +15,7 @@
     *   **Primary LLM Model**: `gemini-2.5-flash` (for drafting planned structures and node articles)
     *   **Critic LLM Model**: `gemini-3.5-flash` (stronger LLM for review validation and isolation constraints)
 *   **Database**: Neo4j (using official `neo4j` package driver with breadcrumbs hierarchical tracking)
+*   **Authentication & Session Management**: FastAPI OAuth2 Password flow with JWT tokens (`pyjwt` and native `bcrypt` for secure password hashing)
 *   **Environment management**: `python-dotenv` and `pydantic-settings` for config loading and validation from `.env`
 
 ## Conventions & Rules
