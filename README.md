@@ -80,11 +80,17 @@ az containerapp update `
 *   **Auto-Centering Camera Panning**: Automatically centers the viewport on selected nodes with a custom offset that shifts the node into the visible area (left of the drawer panel) to prevent clipping.
 *   **Responsive Spacing & physics**: Adjusts repulsion forces, link lengths, and collision paddings dynamically on small viewports. Skips rendering link relationship text labels and wraps long node titles onto multiple lines to prevent overlap clutter.
 
-### 5. Multi-Graph Isolated Dashboard
-*   Users can exit the active workspace to return to a visual homepage showing all saved mindmaps in a clean card layout.
-*   Because every node and relationship is stamped with a unique `topic_id`, multiple independent mindmap workspaces are isolated and reloaded instantly on the same Neo4j database instance.
+### 5. Secure Session Isolation & User Authentication
+*   **Secure Authentication**: Secure login and registration utilizing native `bcrypt` password hashing and signed JSON Web Tokens (JWT).
+*   **Session-Based Data Scoping**: All topics, mindmap nodes, and relationship edges are scoped to the user who created them. Standard users can only view, generate, load, and manage their own mindmaps.
+*   **Auto-session Expiry**: Integrated standard JWT bearer token expiration with client-side automatic logout handling.
 
-### 6. Real-time Progress Window
+### 6. Admin Role & Unified Dashboard
+*   **Global Database Scoping Bypass**: Users flagged with `is_admin: true` in Neo4j bypass user-ownership queries, allowing them to view and manage all mindmaps across all users in the system.
+*   **Owner Badge Visualization**: Dashboard cards display a visual blue badge indicating the owner's email address if the mindmap belongs to a different user, allowing admins to track resources at a glance.
+*   **Unified Access**: Admins can load, run agent operations (like generating sub-graphs/articles), or delete any mindmap in the system from their unified workspace dashboard.
+
+### 7. Real-time Progress Window
 *   Generative actions return an `application/x-ndjson` stream.
 *   The frontend uses a TextDecoder chunk parser to update a step-by-step progress checklist (Planner, Critic, DB Sync) in real time.
 
@@ -122,12 +128,25 @@ Ensure you have a running Neo4j Instance (Aura DB Free tier or local Desktop) an
    NEO4J_PASSWORD=<your-password>
    NEO4J_DATABASE=neo4j
    GEMINI_API_KEY=<your-api-key>
-   PRIMARY_MODEL=gemini-3.5-flash
+   PRIMARY_MODEL=gemini-2.5-flash
    CRITIC_MODEL=gemini-3.5-flash
+   JWT_SECRET_KEY=<your-jwt-secret-signing-key>
+   JWT_ALGORITHM=HS256
    ```
-3. Sync python dependencies and run the server using `uv`:
+3. Sync python dependencies using `uv`:
    ```bash
    uv sync
+   ```
+4. (Optional) Run the database migration script to bootstrap your first user and assign existing unowned topics:
+   ```bash
+   uv run python migration.py
+   ```
+5. (Optional) Elevate a user to admin status in Neo4j:
+   ```bash
+   uv run python set_admin.py
+   ```
+6. Run the server using `uv`:
+   ```bash
    uv run uvicorn app.main:app --port 8000 --host 127.0.0.1
    ```
 
