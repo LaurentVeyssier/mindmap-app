@@ -10,6 +10,9 @@ mindmap-app/
 │   ├── product.md          # Product features and scenarios
 │   ├── tech.md             # Tech stack, conventions, and rules
 │   └── structure.md        # Folder structures and module map (this file)
+├── .github/workflows/
+│   ├── deploy-backend.yml  # Deploy backend workflow
+│   └── keep-db-awake.yml   # Keep database awake scheduled workflow
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py
@@ -25,6 +28,7 @@ mindmap-app/
 │   │   ├── test_agents.py  # Unit tests for agents
 │   │   └── test_neo4j.py   # Integration tests for database queries
 │   ├── migration.py        # Database user and mindmap migration script
+│   ├── keep_alive.py       # AuraDB Keep-alive script to run in cron job
 │   ├── pyproject.toml      # Dependency specification
 │   └── .env                # Local secrets (ignored in Git)
 └── frontend/
@@ -56,6 +60,7 @@ mindmap-app/
 *   `app/agents.py`: Uses the Google GenAI SDK to interact with the LLM. Implements drafting (Planner and Content Writer) and validation (Critic) agents using configured models and global MECE system instructions.
 *   `app/main.py`: Sets up the web server, CORS policies, routes HTTP requests (including auth register/login token endpoints and scoped mindmap APIs), and connects request payloads to backend agents.
 *   `migration.py`: Connects directly to Neo4j database, establishes the default user account using secure password hashes, and links all pre-existing unowned topics to that user.
+*   `keep_alive.py`: Runs a recurring write transaction to prevent AuraDB Free instance from automatically pausing due to inactivity.
 
 ### Frontend
 

@@ -1,0 +1,38 @@
+name: Keep Neo4j AuraDB Awake
+
+on:
+  schedule:
+    # Runs at 00:00 UTC every 2 days (well within the 72-hour limit)
+    - cron: '0 0 */2 * *'
+  workflow_dispatch: # Allows manual trigger from the GitHub Actions UI
+
+jobs:
+  ping-db:
+    name: Connect and Write Keep-Alive Node
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Sync dependencies
+        run: |
+          cd backend
+          uv sync
+
+      - name: Run Keep-Alive Script
+        env:
+          NEO4J_URI: ${{ secrets.NEO4J_URI }}
+          NEO4J_USERNAME: ${{ secrets.NEO4J_USERNAME }}
+          NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
+          NEO4J_DATABASE: ${{ secrets.NEO4J_DATABASE }}
+        run: |
+          cd backend
+          uv run python keep_alive.py
