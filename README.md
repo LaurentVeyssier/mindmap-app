@@ -94,6 +94,10 @@ az containerapp update `
 *   Generative actions return an `application/x-ndjson` stream.
 *   The frontend uses a TextDecoder chunk parser to update a step-by-step progress checklist (Planner, Critic, DB Sync) in real time.
 
+### 8. AuraDB Keep-Alive Cron Automation
+*   **Automatic Write Activity**: Triggers a scheduled GitHub Actions cron job every 48 hours to run a dummy write query to the database, preventing the Neo4j AuraDB Free instance from being paused due to 72 hours of write inactivity.
+*   **Isolated Node Design**: Creates or updates a single isolated `:KeepAlive` node labeled with `{id: 'singleton'}` and updates its `last_ping` timestamp. It has no relationships to standard domain concepts and is completely ignored by the application visualizer to prevent visual clutter.
+
 ---
 
 ## Technology Stack
@@ -227,5 +231,17 @@ The connection between the frontend and backend is established through two commu
 *   **Scale-to-Zero Cost Efficiency**: The container scales down to `0` active replicas when no requests are received for a specific time, costing nothing during idle periods. 
 *   **Automated DNS and TLS**: ACA automatically provides secure, publicly accessible HTTPS endpoints with managed SSL certificates out of the box.
 *   **Fast Cold Starts**: Leverages lightweight base images ensuring ACA instances spin up quickly (usually 20-30 seconds) during scale-from-zero requests.
+
+---
+
+## Neo4j AuraDB Keep-Alive Config
+To ensure the automated scheduled cron job runs successfully, configure the database connection parameters in your GitHub Repository Secrets:
+1. Navigate to your repository on GitHub.
+2. Select **Settings** ➔ **Secrets and variables** ➔ **Actions** ➔ **New repository secret**.
+3. Create the following four secrets, copying the values from your local `backend/.env` file:
+   - `NEO4J_URI`
+   - `NEO4J_USERNAME`
+   - `NEO4J_PASSWORD`
+   - `NEO4J_DATABASE`
 
 
