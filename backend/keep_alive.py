@@ -13,6 +13,14 @@ def run_keep_alive() -> None:
     """
     Connects to the Neo4j AuraDB instance and executes a single dummy write query
     to update the last_ping timestamp, preventing the instance from being paused.
+    This query will simply create a single, isolated node inside the existing database.
+    This query checks the database to see if a node with the label :KeepAlive and the property id: 'singleton' already exists.
+    - If it exists, it updates the last_ping timestamp with the current date and time.
+    - If it doesn't exist, it creates it with the current timestamp.
+    This :KeepAlive node has no relationships (edges) linking it to users, topics, or mindmap concepts.
+    Because this node is labeled :KeepAlive, it will never be loaded by the frontend or backend and will remain completely 
+    invisible on dashboards and mindmap canvases.
+    It can be queried using a Cypher query like "MATCH (k:KeepAlive) RETURN k" from Neo4j Aura console/browser
     
     Raises:
         Exception: If database query or connection fails.
