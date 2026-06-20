@@ -107,12 +107,12 @@ class MindmapAgents:
     mindmaps and write content for concepts.
     """
 
-    def __init__(self, model_name: str = "gemini-2.5-flash", critic_model_name: str = "gemini-3.5-flash") -> None:
+    def __init__(self, model_name: str = "gemini-3.5-flash", critic_model_name: str = "gemini-3.5-flash") -> None:
         """
         Initializes the Gemini GenAI client.
         
         Args:
-            model_name: The Gemini model ID to use (default: gemini-2.5-flash).
+            model_name: The Gemini model ID to use (default: gemini-3.5-flash).
             critic_model_name: The Critic Gemini model ID to use (default: gemini-3.5-flash).
         """
         self.model_name = model_name

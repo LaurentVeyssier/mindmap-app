@@ -12,7 +12,7 @@
 *   **Framework**: FastAPI (supporting real-time NDJSON progress streams using StreamingResponse)
 *   **LLM Integration**: `google-genai` SDK (`from google import genai`)
 *   **Model Configuration (configurable via `.env`)**:
-    *   **Primary LLM Model**: `gemini-2.5-flash` (for drafting planned structures and node articles)
+    *   **Primary LLM Model**: `gemini-3.5-flash` (for drafting planned structures and node articles)
     *   **Critic LLM Model**: `gemini-3.5-flash` (stronger LLM for review validation and isolation constraints)
 *   **Database**: Neo4j (using official `neo4j` package driver with breadcrumbs hierarchical tracking)
 *   **Authentication & Session Management**: FastAPI OAuth2 Password flow with JWT tokens (`pyjwt` and native `bcrypt` for secure password hashing)

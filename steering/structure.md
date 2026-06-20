@@ -23,10 +23,10 @@ mindmap-app/
 │   │   ├── neo4j_client.py # Neo4j Session and driver wrapper
 │   │   ├── agents.py       # LLM Agent orchestration and prompt building
 │   │   └── main.py         # FastAPI application and route endpoints
-│   ├── test/
-│   │   ├── __init__.py
-│   │   ├── test_agents.py  # Unit tests for agents
-│   │   └── test_neo4j.py   # Integration tests for database queries
+    │   ├── test/
+    │   │   ├── __init__.py
+    │   │   ├── test_delete.py  # Unit tests for delete endpoint
+    │   │   └── test_imports.py # Unit tests for package imports
 │   ├── migration.py        # Database user and mindmap migration script
 │   ├── keep_alive.py       # AuraDB Keep-alive script to run in cron job
 │   ├── pyproject.toml      # Dependency specification
@@ -65,7 +65,7 @@ mindmap-app/
 ### Frontend
 
 *   `Login.tsx`: Render registration/login tabs in a premium glassmorphic interface, validating email/password formats and managing session creation.
-*   `MindmapCanvas.tsx`: Renders nodes and edges using React Flow, manages layouts (e.g. concentric or tree-based coordinates), handles node selections, double clicks, or drag actions.
+*   `MindmapCanvas.tsx`: Renders nodes and edges using a D3 force-directed physics engine canvas via `react-force-graph-2d`, managing responsive physics forces, custom styled nodes, and automatic viewport centering.
 *   `DetailSidebar.tsx`: Allows users to trigger detail generations, display generated content in markdown format, and initiate drill-down calls.
 *   `TopicInput.tsx`: Form for starting new mindmaps, specifying primary topics, guidelines, and checking database connections.
 *   `Breadcrumbs.tsx`: Navigational helper tracking the current active parent node ID, rendering clickable links for all parent levels.
